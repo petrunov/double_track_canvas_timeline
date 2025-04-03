@@ -6,6 +6,7 @@ import vueJsx from '@vitejs/plugin-vue-jsx'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/timeline_poc/',
   plugins: [vue(), vueJsx()],
   resolve: {
     alias: {
