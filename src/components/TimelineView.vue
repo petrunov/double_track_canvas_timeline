@@ -11,7 +11,7 @@
           </div>
         </div>
         <!-- Timeline Row -->
-        <div class="timeline-row">
+        <div class="timeline-row no-select">
           <div v-for="(item, index) in items" :key="index" class="timeline-item">
             {{ item.year_ce }}
           </div>
@@ -37,6 +37,7 @@
       </div>
       <div
         class="minimap-indicator"
+        :class="{ 'dragging-indicator': isIndicatorDragging }"
         :style="minimapIndicatorStyle"
         @mousedown="onMinimapIndicatorMouseDown"
         @click.stop
@@ -60,6 +61,8 @@ export default defineComponent({
       width: '0px',
       left: '0px',
     })
+    // Reactive boolean for indicator dragging state.
+    const isIndicatorDragging = ref(false)
 
     // Reactive array for clustered markers on the minimap.
     const itemIndicators = ref<{ left: number; count: number }[]>([])
@@ -69,6 +72,10 @@ export default defineComponent({
     const initialY = -550
     const finalX = 0
     const finalY = 0
+
+    // For freezing the minimap indicator after dragging.
+    const freezeIndicator = ref(false)
+    const indicatorTargetScrollLeft = ref(0)
 
     // Convert vertical wheel events to horizontal scrolling.
     const handleWheel = (e: WheelEvent) => {
@@ -86,6 +93,7 @@ export default defineComponent({
     let startScrollLeft = 0
 
     const onMouseDown = (e: MouseEvent) => {
+      // Prevent drag conflicts with the minimap indicator.
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging = true
       startX = e.pageX
@@ -110,11 +118,6 @@ export default defineComponent({
       const dx = e.pageX - startX
       scrollContainer.value.scrollLeft = startScrollLeft - dx
     }
-
-    // Flag for dragging the minimap indicator.
-    let isIndicatorDragging = false
-    let minimapDragStartX = 0
-    let indicatorInitialLeft = 0
 
     // Update transforms for item animations and the minimap indicator.
     const updateTransforms = () => {
@@ -141,8 +144,8 @@ export default defineComponent({
         }
       })
 
-      // Only update the minimap indicator if not dragging it.
-      if (!isIndicatorDragging) {
+      // Update the minimap indicator only if not dragging or frozen.
+      if (!isIndicatorDragging.value && !freezeIndicator.value) {
         const totalScrollWidth = container.scrollWidth
         const visibleRatio = containerWidth / totalScrollWidth
         const indicatorWidth = containerWidth * visibleRatio
@@ -151,24 +154,26 @@ export default defineComponent({
           width: indicatorWidth + 'px',
           left: indicatorLeft + 'px',
         }
+      } else if (freezeIndicator.value) {
+        // Check if the scroll has nearly caught up with the target.
+        if (Math.abs(scrollLeft - indicatorTargetScrollLeft.value) < 5) {
+          freezeIndicator.value = false
+          updateTransforms()
+        }
       }
 
       // ----- Compute Markers Based on Chronological Data -----
-      // Use the items array to compute marker positions based on year.
       if (items.value.length) {
         const years = items.value.map((item) => Number(item.year_ce))
         const minYear = Math.min(...years)
         const maxYear = Math.max(...years)
         const rawMarkers: number[] = items.value.map((item) => {
-          // If there is no range, center the marker.
           if (maxYear === minYear) return containerWidth / 2
           return ((Number(item.year_ce) - minYear) / (maxYear - minYear)) * containerWidth
         })
 
-        // Sort raw markers.
         rawMarkers.sort((a, b) => a - b)
 
-        // Group markers that are within a threshold (e.g., 10px).
         const clusters: { left: number; count: number }[] = []
         const threshold = 10
         if (rawMarkers.length > 0) {
@@ -185,7 +190,6 @@ export default defineComponent({
               count = 1
             }
           }
-          // Push the last cluster.
           clusters.push({ left: clusterSum / count, count })
         }
         itemIndicators.value = clusters
@@ -209,7 +213,7 @@ export default defineComponent({
 
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
-      isIndicatorDragging = true
+      isIndicatorDragging.value = true
       minimapDragStartX = e.pageX
       indicatorInitialLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
       document.addEventListener('mousemove', onMinimapIndicatorMouseMove)
@@ -217,27 +221,43 @@ export default defineComponent({
       document.body.classList.add('no-select')
     }
 
+    let minimapDragStartX = 0
+    let indicatorInitialLeft = 0
+
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
-      if (!isIndicatorDragging || !scrollContainer.value) return
+      if (!isIndicatorDragging.value || !scrollContainer.value) return
       e.preventDefault()
       const dx = e.pageX - minimapDragStartX
       const containerWidth = scrollContainer.value.clientWidth
       const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width) || 0
       let newLeft = indicatorInitialLeft + dx
       newLeft = Math.max(0, Math.min(newLeft, containerWidth - indicatorWidth))
-      // Immediately update the indicator position.
+      // Immediately update the indicator's style.
       minimapIndicatorStyle.value.left = newLeft + 'px'
       const totalScrollWidth = scrollContainer.value.scrollWidth
       const newScrollLeft = newLeft * (totalScrollWidth / containerWidth)
+      // Update scroll without smooth behavior during drag.
       scrollContainer.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
 
     const onMinimapIndicatorMouseUp = () => {
-      isIndicatorDragging = false
+      isIndicatorDragging.value = false
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      updateTransforms()
+
+      // When releasing the minimap indicator, freeze its style and smoothly scroll to catch up.
+      if (scrollContainer.value) {
+        const containerWidth = scrollContainer.value.clientWidth
+        const totalScrollWidth = scrollContainer.value.scrollWidth
+        const indicatorLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
+        indicatorTargetScrollLeft.value = indicatorLeft * (totalScrollWidth / containerWidth)
+        freezeIndicator.value = true
+        scrollContainer.value.scrollTo({
+          left: indicatorTargetScrollLeft.value,
+          behavior: 'smooth',
+        })
+      }
     }
 
     onMounted(async () => {
@@ -279,6 +299,7 @@ export default defineComponent({
       itemIndicators,
       onMinimapClick,
       onMinimapIndicatorMouseDown,
+      isIndicatorDragging,
     }
   },
 })
@@ -308,6 +329,13 @@ export default defineComponent({
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
+  /* Default cursor for scroll container */
+  cursor: default;
+}
+
+.scroll-container.dragging {
+  scroll-behavior: auto;
+  cursor: move;
 }
 
 .scroll-container::-webkit-scrollbar {
@@ -320,7 +348,7 @@ export default defineComponent({
   flex-direction: column;
   justify-content: flex-end;
   height: 100%;
-  padding-bottom: 10px; /* Optional: add extra spacing from bottom */
+  padding-bottom: 10px;
 }
 
 /* Items Row */
@@ -362,6 +390,8 @@ export default defineComponent({
   height: 30px;
   background-color: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
+  /* Disable text selection for timeline row */
+  user-select: none;
 }
 
 .timeline-item {
@@ -399,7 +429,7 @@ export default defineComponent({
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none; /* Let clicks pass through */
+  pointer-events: none;
 }
 
 /* Marker dots */
@@ -421,10 +451,15 @@ export default defineComponent({
   z-index: 12;
 }
 
+/* When minimap indicator is being dragged */
+.minimap-indicator.dragging-indicator {
+  cursor: grabbing;
+}
+
 /* Fixed arrow above the minimap */
 .fixed-arrow {
   position: fixed;
-  bottom: 130px; /* Adjust so it's above timeline/minimap */
+  bottom: 130px;
   left: 50%;
   transform: translateX(-50%);
   width: 0;
@@ -438,10 +473,5 @@ export default defineComponent({
 /* Disable text selection when dragging */
 .no-select {
   user-select: none;
-}
-
-/* Disable smooth scroll when dragging */
-.scroll-container.dragging {
-  scroll-behavior: auto;
 }
 </style>
