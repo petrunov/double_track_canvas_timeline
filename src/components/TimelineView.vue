@@ -10,8 +10,8 @@
             <p>{{ item.english_long_text }}</p>
           </div>
         </div>
-        <!-- Timeline Row -->
-        <div class="timeline-row no-select">
+        <!-- Timeline Row (unchanged) -->
+        <div class="timeline-row">
           <div v-for="(item, index) in items" :key="index" class="timeline-item">
             {{ item.year_ce }}
           </div>
@@ -20,7 +20,19 @@
       </div>
     </div>
     <!-- Fixed minimap at the bottom -->
-    <div class="minimap" @click="onMinimapClick">
+    <div ref="minimap" class="minimap" @click="onMinimapClick">
+      <!-- Timescale on top of the minimap -->
+      <div class="minimap-timescale">
+        <div
+          v-for="(tick, index) in timelineTicks"
+          :key="index"
+          :class="['tick', tick.type]"
+          :style="{ left: tick.left + 'px' }"
+        >
+          <div class="tick-mark"></div>
+          <div v-if="tick.type === 'major'" class="tick-label">{{ tick.year }}</div>
+        </div>
+      </div>
       <!-- Clustered markers based on event dates -->
       <div class="minimap-indicators">
         <div
@@ -35,6 +47,7 @@
           }"
         ></div>
       </div>
+      <!-- Draggable indicator -->
       <div
         class="minimap-indicator"
         :class="{ 'dragging-indicator': isIndicatorDragging }"
@@ -49,7 +62,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { getItems, type Item } from '@/services/dataService'
 
 export default defineComponent({
@@ -57,14 +70,12 @@ export default defineComponent({
   setup() {
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
+    const minimap = ref<HTMLElement | null>(null)
     const minimapIndicatorStyle = ref<{ width: string; left: string }>({
       width: '0px',
       left: '0px',
     })
-    // Reactive boolean for indicator dragging state.
     const isIndicatorDragging = ref(false)
-
-    // Reactive array for clustered markers on the minimap.
     const itemIndicators = ref<{ left: number; count: number }[]>([])
 
     // Animation offsets for items.
@@ -93,7 +104,7 @@ export default defineComponent({
     let startScrollLeft = 0
 
     const onMouseDown = (e: MouseEvent) => {
-      // Prevent drag conflicts with the minimap indicator.
+      // Avoid conflict with minimap indicator drag.
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging = true
       startX = e.pageX
@@ -119,7 +130,7 @@ export default defineComponent({
       scrollContainer.value.scrollLeft = startScrollLeft - dx
     }
 
-    // Update transforms for item animations and the minimap indicator.
+    // Update transforms for item animations and minimap indicator.
     const updateTransforms = () => {
       if (!scrollContainer.value) return
       const container = scrollContainer.value
@@ -144,7 +155,7 @@ export default defineComponent({
         }
       })
 
-      // Update the minimap indicator only if not dragging or frozen.
+      // Update minimap indicator if not dragging or frozen.
       if (!isIndicatorDragging.value && !freezeIndicator.value) {
         const totalScrollWidth = container.scrollWidth
         const visibleRatio = containerWidth / totalScrollWidth
@@ -155,14 +166,13 @@ export default defineComponent({
           left: indicatorLeft + 'px',
         }
       } else if (freezeIndicator.value) {
-        // Check if the scroll has nearly caught up with the target.
         if (Math.abs(scrollLeft - indicatorTargetScrollLeft.value) < 5) {
           freezeIndicator.value = false
           updateTransforms()
         }
       }
 
-      // ----- Compute Markers Based on Chronological Data -----
+      // Compute clustered markers.
       if (items.value.length) {
         const years = items.value.map((item) => Number(item.year_ce))
         const minYear = Math.min(...years)
@@ -171,15 +181,12 @@ export default defineComponent({
           if (maxYear === minYear) return containerWidth / 2
           return ((Number(item.year_ce) - minYear) / (maxYear - minYear)) * containerWidth
         })
-
         rawMarkers.sort((a, b) => a - b)
-
         const clusters: { left: number; count: number }[] = []
         const threshold = 10
         if (rawMarkers.length > 0) {
           let clusterSum = rawMarkers[0]
           let count = 1
-
           for (let i = 1; i < rawMarkers.length; i++) {
             if (rawMarkers[i] - rawMarkers[i - 1] <= threshold) {
               clusterSum += rawMarkers[i]
@@ -196,6 +203,41 @@ export default defineComponent({
       }
     }
 
+    // Computed ticks for the minimap timescale.
+    const timelineTicks = computed(() => {
+      if (!items.value.length) return []
+      // Use fixed margins so first and last tick are fully visible.
+      const leftMargin = 20
+      const rightMargin = 20
+      const minimapWidth = minimap.value ? minimap.value.clientWidth : window.innerWidth
+      const availableWidth = minimapWidth - leftMargin - rightMargin
+      const years = items.value.map((item) => Number(item.year_ce))
+      const minYear = Math.min(...years)
+      const maxYear = Math.max(...years)
+      const span = maxYear - minYear
+
+      // Define tick intervals.
+      const majorTickInterval = 500
+      const mediumTickInterval = 250
+      const minorTickInterval = 50
+
+      const startTick = Math.floor(minYear / minorTickInterval) * minorTickInterval
+      const endTick = Math.ceil(maxYear / minorTickInterval) * minorTickInterval
+
+      const ticks = []
+      for (let year = startTick; year <= endTick; year += minorTickInterval) {
+        let type: 'major' | 'medium' | 'minor' = 'minor'
+        if (year % majorTickInterval === 0) {
+          type = 'major'
+        } else if (year % mediumTickInterval === 0) {
+          type = 'medium'
+        }
+        const left = leftMargin + ((year - minYear) / span) * availableWidth
+        ticks.push({ year, left, type })
+      }
+      return ticks
+    })
+
     // Handle clicks on the minimap.
     const onMinimapClick = (e: MouseEvent) => {
       if (!scrollContainer.value) return
@@ -211,6 +253,9 @@ export default defineComponent({
       container.scrollTo({ left: newScrollLeft, behavior: 'smooth' })
     }
 
+    let minimapDragStartX = 0
+    let indicatorInitialLeft = 0
+
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
@@ -221,9 +266,6 @@ export default defineComponent({
       document.body.classList.add('no-select')
     }
 
-    let minimapDragStartX = 0
-    let indicatorInitialLeft = 0
-
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
       if (!isIndicatorDragging.value || !scrollContainer.value) return
       e.preventDefault()
@@ -232,11 +274,9 @@ export default defineComponent({
       const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width) || 0
       let newLeft = indicatorInitialLeft + dx
       newLeft = Math.max(0, Math.min(newLeft, containerWidth - indicatorWidth))
-      // Immediately update the indicator's style.
       minimapIndicatorStyle.value.left = newLeft + 'px'
       const totalScrollWidth = scrollContainer.value.scrollWidth
       const newScrollLeft = newLeft * (totalScrollWidth / containerWidth)
-      // Update scroll without smooth behavior during drag.
       scrollContainer.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
 
@@ -245,8 +285,6 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-
-      // When releasing the minimap indicator, freeze its style and smoothly scroll to catch up.
       if (scrollContainer.value) {
         const containerWidth = scrollContainer.value.clientWidth
         const totalScrollWidth = scrollContainer.value.scrollWidth
@@ -269,7 +307,6 @@ export default defineComponent({
       document.addEventListener('mousedown', onMouseDown)
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
-
       nextTick(() => {
         const itemElements = Array.from(document.querySelectorAll('.item')) as HTMLElement[]
         itemElements.forEach((el) => el.classList.add('no-transition'))
@@ -295,25 +332,32 @@ export default defineComponent({
     return {
       items,
       scrollContainer,
+      minimap,
       minimapIndicatorStyle,
       itemIndicators,
       onMinimapClick,
       onMinimapIndicatorMouseDown,
       isIndicatorDragging,
+      timelineTicks,
     }
   },
 })
 </script>
 
 <style scoped>
-/* Main container fills the viewport */
+/* Disable all text selection in this component */
+* {
+  user-select: none !important;
+}
+
+/* Main container */
 .main {
   position: relative;
   height: 100vh;
   overflow: hidden;
 }
 
-/* Scroll container from top to 90px above bottom (timeline is inside it) */
+/* Scroll container */
 .scroll-container {
   position: fixed;
   top: 0;
@@ -329,7 +373,6 @@ export default defineComponent({
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
-  /* Default cursor for scroll container */
   cursor: default;
 }
 
@@ -342,7 +385,7 @@ export default defineComponent({
   display: none;
 }
 
-/* Bottom-content container to hold items & timeline, aligned at the bottom */
+/* Bottom-content container */
 .bottom-content {
   display: flex;
   flex-direction: column;
@@ -390,8 +433,6 @@ export default defineComponent({
   height: 30px;
   background-color: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
-  /* Disable text selection for timeline row */
-  user-select: none;
 }
 
 .timeline-item {
@@ -409,7 +450,7 @@ export default defineComponent({
   flex-shrink: 0;
 }
 
-/* Fixed minimap at the bottom */
+/* Fixed minimap */
 .minimap {
   position: fixed;
   bottom: 0;
@@ -420,15 +461,56 @@ export default defineComponent({
   border-top: 1px solid var(--color-border);
   cursor: pointer;
   z-index: 11;
+  box-sizing: border-box;
 }
 
-/* Container for the markers */
-.minimap-indicators {
+/* Timescale on top of minimap */
+.minimap-timescale {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
+  height: 20px;
+  pointer-events: none;
+}
+
+/* Tick styling */
+.tick {
+  position: absolute;
+  top: 0;
+}
+
+.tick .tick-mark {
+  background-color: var(--color-heading);
+  width: 1px;
+}
+
+.tick.major .tick-mark {
+  height: 10px;
+}
+
+.tick.medium .tick-mark {
+  height: 7px;
+}
+
+.tick.minor .tick-mark {
+  height: 4px;
+}
+
+.tick-label {
+  font-size: 10px;
+  color: var(--color-text);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* Minimap indicators */
+.minimap-indicators {
+  position: absolute;
+  top: 20px;
+  left: 0;
+  width: 100%;
+  height: 80px;
   pointer-events: none;
 }
 
@@ -441,22 +523,20 @@ export default defineComponent({
   transform: translateY(-50%);
 }
 
-/* Scroll indicator should appear above markers */
+/* Draggable indicator */
 .minimap-indicator {
   position: absolute;
-  top: 0;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.2);
-  cursor: grab;
+  background-color: #ccc;
+  opacity: 0.2;
   z-index: 12;
 }
 
-/* When minimap indicator is being dragged */
 .minimap-indicator.dragging-indicator {
   cursor: grabbing;
 }
 
-/* Fixed arrow above the minimap */
+/* Fixed arrow */
 .fixed-arrow {
   position: fixed;
   bottom: 130px;
@@ -468,10 +548,5 @@ export default defineComponent({
   border-right: 10px solid transparent;
   border-bottom: 10px solid var(--color-heading);
   z-index: 10;
-}
-
-/* Disable text selection when dragging */
-.no-select {
-  user-select: none;
 }
 </style>
