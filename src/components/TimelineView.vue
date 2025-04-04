@@ -10,7 +10,7 @@
             <p>{{ item.english_long_text }}</p>
           </div>
         </div>
-        <!-- Timeline Row (unchanged) -->
+        <!-- Timeline Row -->
         <div class="timeline-row">
           <div v-for="(item, index) in items" :key="index" class="timeline-item">
             {{ item.year_ce }}
@@ -33,21 +33,21 @@
           <div v-if="tick.type === 'major'" class="tick-label">{{ tick.year }}</div>
         </div>
       </div>
-      <!-- Clustered markers based on event dates -->
-      <div class="minimap-indicators">
+      <!-- New minimap items as colored rectangles -->
+      <div class="minimap-items">
         <div
-          v-for="(marker, index) in itemIndicators"
+          v-for="(rect, index) in minimapRectangles"
           :key="index"
-          class="minimap-marker"
+          class="minimap-rectangle"
+          :title="rect.title"
           :style="{
-            left: marker.left + 'px',
-            width: marker.count > 1 ? '10px' : '6px',
-            height: marker.count > 1 ? '10px' : '6px',
-            marginLeft: marker.count > 1 ? '-5px' : '-3px',
+            left: rect.left + 'px',
+            top: rect.top + 'px',
+            backgroundColor: rect.color,
           }"
         ></div>
       </div>
-      <!-- Draggable indicator -->
+      <!-- Draggable indicator (unchanged) -->
       <div
         class="minimap-indicator"
         :class="{ 'dragging-indicator': isIndicatorDragging }"
@@ -76,7 +76,6 @@ export default defineComponent({
       left: '0px',
     })
     const isIndicatorDragging = ref(false)
-    const itemIndicators = ref<{ left: number; count: number }[]>([])
 
     // Animation offsets for items.
     const initialX = 150
@@ -171,42 +170,11 @@ export default defineComponent({
           updateTransforms()
         }
       }
-
-      // Compute clustered markers.
-      if (items.value.length) {
-        const years = items.value.map((item) => Number(item.year_ce))
-        const minYear = Math.min(...years)
-        const maxYear = Math.max(...years)
-        const rawMarkers: number[] = items.value.map((item) => {
-          if (maxYear === minYear) return containerWidth / 2
-          return ((Number(item.year_ce) - minYear) / (maxYear - minYear)) * containerWidth
-        })
-        rawMarkers.sort((a, b) => a - b)
-        const clusters: { left: number; count: number }[] = []
-        const threshold = 10
-        if (rawMarkers.length > 0) {
-          let clusterSum = rawMarkers[0]
-          let count = 1
-          for (let i = 1; i < rawMarkers.length; i++) {
-            if (rawMarkers[i] - rawMarkers[i - 1] <= threshold) {
-              clusterSum += rawMarkers[i]
-              count++
-            } else {
-              clusters.push({ left: clusterSum / count, count })
-              clusterSum = rawMarkers[i]
-              count = 1
-            }
-          }
-          clusters.push({ left: clusterSum / count, count })
-        }
-        itemIndicators.value = clusters
-      }
     }
 
     // Computed ticks for the minimap timescale.
     const timelineTicks = computed(() => {
       if (!items.value.length) return []
-      // Use fixed margins so first and last tick are fully visible.
       const leftMargin = 20
       const rightMargin = 20
       const minimapWidth = minimap.value ? minimap.value.clientWidth : window.innerWidth
@@ -214,9 +182,8 @@ export default defineComponent({
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
-      const span = maxYear - minYear
+      const span = maxYear - minYear || 1
 
-      // Define tick intervals.
       const majorTickInterval = 500
       const mediumTickInterval = 250
       const minorTickInterval = 50
@@ -238,6 +205,45 @@ export default defineComponent({
       return ticks
     })
 
+    // New computed property for minimap rectangles.
+    const totalRows = 5
+    const colorPalette = [
+      '#f44336',
+      '#e91e63',
+      '#9c27b0',
+      '#2196f3',
+      '#4caf50',
+      '#ff9800',
+      '#795548',
+    ]
+    const minimapRectangles = computed(() => {
+      if (!items.value.length || !minimap.value) return []
+      const years = items.value.map((item) => Number(item.year_ce))
+      const minYear = Math.min(...years)
+      const maxYear = Math.max(...years)
+      const minimapElement = minimap.value
+      const leftMargin = 10
+      const rightMargin = 10
+      const minimapWidth = minimapElement.clientWidth
+      const availableWidth = minimapWidth - leftMargin - rightMargin
+      const span = maxYear - minYear || 1
+
+      return items.value.map((item, index) => {
+        const year = Number(item.year_ce)
+        const left = leftMargin + ((year - minYear) / span) * availableWidth
+        const rowIndex = index % totalRows
+        const rowHeight = 10
+        const top = 25 + rowIndex * rowHeight
+        const color = colorPalette[index % colorPalette.length]
+        return {
+          left,
+          top,
+          color,
+          title: item.english_heading,
+        }
+      })
+    })
+
     // Handle clicks on the minimap.
     const onMinimapClick = (e: MouseEvent) => {
       if (!scrollContainer.value) return
@@ -253,6 +259,7 @@ export default defineComponent({
       container.scrollTo({ left: newScrollLeft, behavior: 'smooth' })
     }
 
+    // Dragging for the minimap indicator.
     let minimapDragStartX = 0
     let indicatorInitialLeft = 0
 
@@ -334,11 +341,11 @@ export default defineComponent({
       scrollContainer,
       minimap,
       minimapIndicatorStyle,
-      itemIndicators,
-      onMinimapClick,
-      onMinimapIndicatorMouseDown,
       isIndicatorDragging,
       timelineTicks,
+      minimapRectangles,
+      onMinimapClick,
+      onMinimapIndicatorMouseDown,
     }
   },
 })
@@ -504,23 +511,21 @@ export default defineComponent({
   white-space: nowrap;
 }
 
-/* Minimap indicators */
-.minimap-indicators {
+/* Minimap items container */
+.minimap-items {
   position: absolute;
-  top: 20px;
+  top: 10%;
   left: 0;
-  width: 100%;
-  height: 80px;
+  width: 10%;
+  height: 50%;
   pointer-events: none;
 }
 
-/* Marker dots */
-.minimap-marker {
+/* Each colored rectangle in the minimap */
+.minimap-rectangle {
   position: absolute;
-  top: 50%;
-  background-color: var(--color-heading);
-  border-radius: 50%;
-  transform: translateY(-50%);
+  width: 8px;
+  height: 4px;
 }
 
 /* Draggable indicator */
