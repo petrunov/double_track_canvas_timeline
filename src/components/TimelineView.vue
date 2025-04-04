@@ -5,64 +5,106 @@
       <div class="bottom-content">
         <!-- Items Row -->
         <div class="items-row">
-          <div v-for="(item, index) in items" :key="index" class="item">
+          <div
+            v-for="(item, index) in items"
+            :key="index"
+            class="item"
+            :class="{ 'hidden-item': !categoryFilter[item.category] }"
+          >
             <h3>{{ item.english_heading }}</h3>
             <p>{{ item.english_long_text }}</p>
           </div>
         </div>
         <!-- Timeline Row -->
         <div class="timeline-row">
-          <div v-for="(item, index) in items" :key="index" class="timeline-item">
+          <div
+            v-for="(item, index) in items"
+            :key="index"
+            class="timeline-item"
+            :class="{ 'hidden-item': !categoryFilter[item.category] }"
+          >
             {{ item.year_ce }}
           </div>
           <div class="timeline-spacer"></div>
         </div>
       </div>
     </div>
-    <!-- Fixed minimap at the bottom -->
-    <div ref="minimap" class="minimap" @click="onMinimapClick">
-      <!-- Timescale on top of the minimap -->
-      <div class="minimap-timescale">
+
+    <!-- Fixed minimap container that scrolls horizontally -->
+    <div class="minimap-container">
+      <div
+        ref="minimap"
+        class="minimap"
+        @click="onMinimapClick"
+        :style="{ width: minimapWidth + 'px' }"
+      >
+        <!-- Timescale on top of the minimap -->
+        <div class="minimap-timescale">
+          <div
+            v-for="(tick, index) in timelineTicks"
+            :key="index"
+            :class="['tick', tick.type]"
+            :style="{ left: tick.left + 'px' }"
+          >
+            <div class="tick-mark"></div>
+            <div v-if="tick.type === 'major'" class="tick-label">{{ tick.year }}</div>
+          </div>
+        </div>
+
+        <!-- Minimap items as colored rectangles -->
+        <div class="minimap-items">
+          <div
+            v-for="(rect, index) in minimapRectangles"
+            :key="index"
+            class="minimap-rectangle"
+            :title="rect.title"
+            :style="{
+              left: rect.left + 'px',
+              top: rect.top + 'px',
+              backgroundColor: rect.color,
+              visibility: categoryFilter[rect.category] ? 'visible' : 'hidden',
+            }"
+          ></div>
+        </div>
+
+        <!-- Draggable indicator -->
         <div
-          v-for="(tick, index) in timelineTicks"
-          :key="index"
-          :class="['tick', tick.type]"
-          :style="{ left: tick.left + 'px' }"
+          class="minimap-indicator"
+          :class="{ 'dragging-indicator': isIndicatorDragging }"
+          :style="minimapIndicatorStyle"
+          @mousedown="onMinimapIndicatorMouseDown"
+          @click.stop
         >
-          <div class="tick-mark"></div>
-          <div v-if="tick.type === 'major'" class="tick-label">{{ tick.year }}</div>
+          <!-- Crosshair plus sign in the center -->
+          <div class="crosshair-lines"></div>
+          <!-- Corner markers -->
+          <div class="corner top-left"></div>
+          <div class="corner top-right"></div>
+          <div class="corner bottom-left"></div>
+          <div class="corner bottom-right"></div>
         </div>
       </div>
-      <!-- New minimap items as colored rectangles -->
-      <div class="minimap-items">
-        <div
-          v-for="(rect, index) in minimapRectangles"
-          :key="index"
-          class="minimap-rectangle"
-          :title="rect.title"
-          :style="{
-            left: rect.left + 'px',
-            top: rect.top + 'px',
-            backgroundColor: rect.color,
-          }"
-        ></div>
-      </div>
-      <!-- Draggable indicator (unchanged) -->
-      <div
-        class="minimap-indicator"
-        :class="{ 'dragging-indicator': isIndicatorDragging }"
-        :style="minimapIndicatorStyle"
-        @mousedown="onMinimapIndicatorMouseDown"
-        @click.stop
-      ></div>
     </div>
+
+    <!-- Category filter row below the minimap -->
+    <div class="category-filters">
+      <div class="category-filter">
+        <input type="checkbox" v-model="allChecked" id="check-all" />
+        <label for="check-all">Check All</label>
+      </div>
+      <div v-for="category in categories" :key="category" class="category-filter">
+        <input type="checkbox" v-model="categoryFilter[category]" :id="`cat-${category}`" />
+        <label :for="`cat-${category}`">{{ category }}</label>
+      </div>
+    </div>
+
     <!-- Fixed arrow element above the minimap -->
     <div class="fixed-arrow"></div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { getItems, type Item } from '@/services/dataService'
 
 export default defineComponent({
@@ -76,12 +118,46 @@ export default defineComponent({
       left: '0px',
     })
     const isIndicatorDragging = ref(false)
+    const minimapWidth = ref(0)
+    const minimapScale = ref(0)
+
+    // Category filter: key is category, value is boolean.
+    const categoryFilter = ref<Record<string, boolean>>({})
+
+    // Compute distinct categories from items.
+    const categories = computed(() => {
+      return Array.from(new Set(items.value.map((item) => item.category)))
+    })
+
+    const allChecked = computed({
+      get() {
+        return categories.value.every((cat) => categoryFilter.value[cat])
+      },
+      set(value: boolean) {
+        categories.value.forEach((cat) => {
+          categoryFilter.value[cat] = value
+        })
+      },
+    })
+
+    // When items are loaded, initialize the category filter.
+    watch(
+      () => items.value,
+      () => {
+        categories.value.forEach((cat) => {
+          if (categoryFilter.value[cat] === undefined) {
+            categoryFilter.value[cat] = true
+          }
+        })
+      },
+      { immediate: true },
+    )
 
     // Animation offsets for items.
     const initialX = 150
-    const initialY = -550
+    const initialY = -250
     const finalX = 0
-    const finalY = 0
+    const finalY = -5
 
     // For freezing the minimap indicator after dragging.
     const freezeIndicator = ref(false)
@@ -129,6 +205,26 @@ export default defineComponent({
       scrollContainer.value.scrollLeft = startScrollLeft - dx
     }
 
+    // Update minimap width based on content
+    const updateMinimapWidth = () => {
+      if (!scrollContainer.value) return
+
+      const viewportWidth = window.innerWidth
+      const contentWidth = scrollContainer.value.scrollWidth
+
+      // A fixed scale factor when content is wide enough
+      const fixedScale = 0.04
+      // If the calculated minimap width would be less than the viewport,
+      // adjust the scale so that the minimap fills the viewport
+      if (contentWidth * fixedScale < viewportWidth) {
+        minimapScale.value = viewportWidth / contentWidth
+        minimapWidth.value = viewportWidth
+      } else {
+        minimapScale.value = fixedScale
+        minimapWidth.value = contentWidth * fixedScale
+      }
+    }
+
     // Update transforms for item animations and minimap indicator.
     const updateTransforms = () => {
       if (!scrollContainer.value) return
@@ -154,12 +250,24 @@ export default defineComponent({
         }
       })
 
+      // Update minimap scroll position (parallax effect)
+      if (minimap.value && minimap.value.parentElement) {
+        const totalScrollWidth = container.scrollWidth
+        const minimapParent = minimap.value.parentElement
+        const minimapScrollRange = minimapWidth.value - minimapParent.clientWidth
+
+        // Create a parallax effect by using a non-linear relationship
+        // between content scroll and minimap scroll
+        const scrollRatio = scrollLeft / (totalScrollWidth - containerWidth)
+        minimapParent.scrollLeft = scrollRatio * minimapScrollRange
+      }
+
       // Update minimap indicator if not dragging or frozen.
       if (!isIndicatorDragging.value && !freezeIndicator.value) {
         const totalScrollWidth = container.scrollWidth
         const visibleRatio = containerWidth / totalScrollWidth
-        const indicatorWidth = containerWidth * visibleRatio
-        const indicatorLeft = scrollLeft * (containerWidth / totalScrollWidth)
+        const indicatorWidth = minimapWidth.value * visibleRatio - 5
+        const indicatorLeft = (scrollLeft / totalScrollWidth) * minimapWidth.value
         minimapIndicatorStyle.value = {
           width: indicatorWidth + 'px',
           left: indicatorLeft + 'px',
@@ -177,8 +285,7 @@ export default defineComponent({
       if (!items.value.length) return []
       const leftMargin = 20
       const rightMargin = 20
-      const minimapWidth = minimap.value ? minimap.value.clientWidth : window.innerWidth
-      const availableWidth = minimapWidth - leftMargin - rightMargin
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
@@ -199,13 +306,13 @@ export default defineComponent({
         } else if (year % mediumTickInterval === 0) {
           type = 'medium'
         }
-        const left = leftMargin + ((year - minYear) / span) * availableWidth
+        const left = leftMargin + ((year - minYear) / span) * availableWidth - 3
         ticks.push({ year, left, type })
       }
       return ticks
     })
 
-    // New computed property for minimap rectangles.
+    // Computed property for minimap rectangles
     const totalRows = 5
     const colorPalette = [
       '#f44336',
@@ -217,37 +324,74 @@ export default defineComponent({
       '#795548',
     ]
     const minimapRectangles = computed(() => {
-      if (!items.value.length || !minimap.value) return []
+      if (!items.value.length || !scrollContainer.value) return []
+
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
-      const minimapElement = minimap.value
       const leftMargin = 10
       const rightMargin = 10
-      const minimapWidth = minimapElement.clientWidth
-      const availableWidth = minimapWidth - leftMargin - rightMargin
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
       const span = maxYear - minYear || 1
 
-      return items.value.map((item, index) => {
-        const year = Number(item.year_ce)
-        const left = leftMargin + ((year - minYear) / span) * availableWidth
-        const rowIndex = index % totalRows
-        const rowHeight = 10
-        const top = 25 + rowIndex * rowHeight
-        const color = colorPalette[index % colorPalette.length]
+      // Create a mapping of items by their position
+      const itemPositions = new Map()
+      items.value.forEach((item, index) => {
+        // Find the actual timeline item element
+        const itemElement = document.querySelector(
+          `.items-row .item:nth-child(${index + 1})`,
+        ) as HTMLElement
+        if (itemElement) {
+          itemPositions.set(item, itemElement.offsetLeft)
+        }
+      })
+
+      // Calculate positions proportionally based on actual item positions
+      // Calculate positions proportionally based on actual item positions
+      // Calculate positions proportionally based on actual item positions
+      return items.value.map((item) => {
+        let left: number
+        const itemLeft = itemPositions.get(item)
+
+        if (itemLeft !== undefined) {
+          // Position based on actual element position
+          left = (itemLeft / scrollContainer.value!.scrollWidth) * availableWidth + leftMargin
+        } else {
+          // Fallback to year-based positioning
+          const year = Number(item.year_ce)
+          left = leftMargin + ((year - minYear) / span) * availableWidth - 5
+        }
+
+        // Create a pseudo-random row assignment that depends on the item
+        // This ensures consistent positions between renders but breaks the ladder pattern
+        const itemHash = item.english_heading.length + (Number(item.year_ce) % 100)
+        const rowIndex = itemHash % totalRows
+
+        // Add a small horizontal offset based on hash to stagger items further
+        const horizontalOffset = (itemHash % 7) - 3 // Range from -3 to 3 pixels
+
+        const rowHeight = 4
+        const top = 35 + rowIndex * rowHeight
+
+        // Add a small vertical jitter to break perfect horizontal alignment
+        const verticalJitter = (itemHash % 5) - 2 // Range from -2 to 2 pixels
+
+        const color = colorPalette[categories.value.indexOf(item.category) % colorPalette.length]
+
         return {
-          left,
-          top,
+          left: left + horizontalOffset,
+          top: top + verticalJitter,
           color,
           title: item.english_heading,
+          category: item.category,
         }
       })
     })
 
     // Handle clicks on the minimap.
     const onMinimapClick = (e: MouseEvent) => {
-      if (!scrollContainer.value) return
-      const minimapElement = e.currentTarget as HTMLElement
+      if (!scrollContainer.value || !minimap.value) return
+      const minimapElement = minimap.value
       const minimapRect = minimapElement.getBoundingClientRect()
       const clickX = e.clientX - minimapRect.left
       const minimapWidth = minimapElement.clientWidth
@@ -274,16 +418,17 @@ export default defineComponent({
     }
 
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
-      if (!isIndicatorDragging.value || !scrollContainer.value) return
+      if (!isIndicatorDragging.value || !scrollContainer.value || !minimap.value) return
       e.preventDefault()
       const dx = e.pageX - minimapDragStartX
-      const containerWidth = scrollContainer.value.clientWidth
+      const minimapElement = minimap.value
+      const minimapWidth = minimapElement.clientWidth
       const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width) || 0
       let newLeft = indicatorInitialLeft + dx
-      newLeft = Math.max(0, Math.min(newLeft, containerWidth - indicatorWidth))
+      newLeft = Math.max(0, Math.min(newLeft, minimapWidth - indicatorWidth))
       minimapIndicatorStyle.value.left = newLeft + 'px'
       const totalScrollWidth = scrollContainer.value.scrollWidth
-      const newScrollLeft = newLeft * (totalScrollWidth / containerWidth)
+      const newScrollLeft = (newLeft / minimapWidth) * totalScrollWidth
       scrollContainer.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
 
@@ -292,11 +437,12 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      if (scrollContainer.value) {
-        const containerWidth = scrollContainer.value.clientWidth
+      if (scrollContainer.value && minimap.value) {
+        const minimapElement = minimap.value
+        const minimapWidth = minimapElement.clientWidth
         const totalScrollWidth = scrollContainer.value.scrollWidth
         const indicatorLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
-        indicatorTargetScrollLeft.value = indicatorLeft * (totalScrollWidth / containerWidth)
+        indicatorTargetScrollLeft.value = (indicatorLeft / minimapWidth) * totalScrollWidth
         freezeIndicator.value = true
         scrollContainer.value.scrollTo({
           left: indicatorTargetScrollLeft.value,
@@ -307,21 +453,31 @@ export default defineComponent({
 
     onMounted(async () => {
       items.value = await getItems()
+
       if (scrollContainer.value) {
         scrollContainer.value.addEventListener('wheel', handleWheel, { passive: false })
         scrollContainer.value.addEventListener('scroll', updateTransforms)
       }
+
       document.addEventListener('mousedown', onMouseDown)
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
+
       nextTick(() => {
+        updateMinimapWidth()
         const itemElements = Array.from(document.querySelectorAll('.item')) as HTMLElement[]
         itemElements.forEach((el) => el.classList.add('no-transition'))
-        updateTransforms()
+
+        // Initial delay to ensure DOM is fully rendered before positioning calculations
         setTimeout(() => {
+          updateTransforms()
           itemElements.forEach((el) => el.classList.remove('no-transition'))
         }, 50)
-        window.addEventListener('resize', updateTransforms)
+
+        window.addEventListener('resize', () => {
+          updateMinimapWidth()
+          updateTransforms()
+        })
       })
     })
 
@@ -340,12 +496,16 @@ export default defineComponent({
       items,
       scrollContainer,
       minimap,
+      minimapWidth,
       minimapIndicatorStyle,
       isIndicatorDragging,
       timelineTicks,
       minimapRectangles,
       onMinimapClick,
       onMinimapIndicatorMouseDown,
+      categoryFilter,
+      categories,
+      allChecked,
     }
   },
 })
@@ -370,7 +530,7 @@ export default defineComponent({
   top: 0;
   left: 0;
   right: 0;
-  bottom: 90px;
+  bottom: 120px; /* Adjusted to accommodate minimap and category filters */
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -431,6 +591,11 @@ export default defineComponent({
   margin-bottom: 5px;
 }
 
+/* Hide items but preserve layout */
+.hidden-item {
+  visibility: hidden;
+}
+
 /* Timeline Row */
 .timeline-row {
   width: max-content;
@@ -457,18 +622,31 @@ export default defineComponent({
   flex-shrink: 0;
 }
 
-/* Fixed minimap */
-.minimap {
+/* Minimap container for horizontal scrolling */
+.minimap-container {
   position: fixed;
-  bottom: 0;
+  bottom: 40px;
   left: 0;
-  width: 100vw;
-  height: 100px;
+  width: 100%;
+  height: 90px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  z-index: 11;
   background-color: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
+  scrollbar-width: none;
+}
+
+.minimap-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fixed minimap */
+.minimap {
+  height: 90px;
+  background-color: var(--color-background-soft);
   cursor: pointer;
-  z-index: 11;
-  box-sizing: border-box;
+  position: relative;
 }
 
 /* Timescale on top of minimap */
@@ -514,10 +692,10 @@ export default defineComponent({
 /* Minimap items container */
 .minimap-items {
   position: absolute;
-  top: 10%;
+  top: 20px;
   left: 0;
-  width: 10%;
-  height: 50%;
+  width: 100%;
+  height: 70px;
   pointer-events: none;
 }
 
@@ -525,33 +703,139 @@ export default defineComponent({
 .minimap-rectangle {
   position: absolute;
   width: 8px;
-  height: 4px;
+  height: 3px;
 }
 
 /* Draggable indicator */
+/* Updated minimap indicator styling */
 .minimap-indicator {
   position: absolute;
   height: 100%;
-  background-color: #ccc;
-  opacity: 0.2;
-  z-index: 12;
+  box-sizing: border-box;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Crosshair plus sign in the center */
+.minimap-indicator .crosshair-lines {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20%;
+  height: 20%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.minimap-indicator .crosshair-lines::before,
+.minimap-indicator .crosshair-lines::after {
+  content: '';
+  position: absolute;
+  background-color: white;
+}
+
+/* Vertical line */
+.minimap-indicator .crosshair-lines::before {
+  width: 1px;
+  height: 100%;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+/* Horizontal line */
+.minimap-indicator .crosshair-lines::after {
+  height: 1px;
+  width: 100%;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+/* Corner markers: small squares with borders only on the outer edges */
+.minimap-indicator .corner {
+  position: absolute;
+  width: 10px; /* Adjust the size as needed */
+  height: 10px;
+  border: 2px solid white;
+  pointer-events: none;
+}
+
+/* Top-left corner: show top and left borders only */
+.minimap-indicator .corner.top-left {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+
+/* Top-right corner: show top and right borders only */
+.minimap-indicator .corner.top-right {
+  top: 0;
+  right: 0;
+  border-left: none;
+  border-bottom: none;
+}
+
+/* Bottom-left corner: show bottom and left borders only */
+.minimap-indicator .corner.bottom-left {
+  bottom: 0;
+  left: 0;
+  border-right: none;
+  border-top: none;
+}
+
+/* Bottom-right corner: show bottom and right borders only */
+.minimap-indicator .corner.bottom-right {
+  bottom: 0;
+  right: 0;
+  border-left: none;
+  border-top: none;
 }
 
 .minimap-indicator.dragging-indicator {
   cursor: grabbing;
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Category filters row */
+.category-filters {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 40px;
+  background-color: var(--color-background-soft);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  overflow-x: auto;
+  padding: 0 10px;
+  box-sizing: border-box;
+  z-index: 12;
+}
+
+.category-filter {
+  margin-right: 15px;
+  display: flex;
+  align-items: center;
+}
+
+.category-filter input {
+  margin-right: 5px;
 }
 
 /* Fixed arrow */
 .fixed-arrow {
   position: fixed;
-  bottom: 130px;
+  bottom: 160px;
   left: 50%;
   transform: translateX(-50%);
   width: 0;
   height: 0;
   border-left: 10px solid transparent;
   border-right: 10px solid transparent;
-  border-bottom: 10px solid var(--color-heading);
+  border-bottom: 10px solid var(--color-background-soft);
   z-index: 10;
 }
 </style>
