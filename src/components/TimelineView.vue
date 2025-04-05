@@ -3,6 +3,27 @@
     <!-- Scrollable content using RecycleScroller -->
     <div ref="scrollContainer" class="scroll-container">
       <div class="bottom-content">
+        <!-- Second track (Tamil) -->
+        <div class="items-row">
+          <RecycleScroller
+            :buffer="50"
+            ref="recycleScroller2"
+            class="scroller"
+            :items="items2"
+            :item-size="itemWidth"
+            direction="horizontal"
+            key-field="id"
+            v-slot="{ item }"
+          >
+            <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
+              <div class="item-inner">
+                <h3>{{ item.tamil_heading }}</h3>
+                <p>{{ item.tamil_long_text }}</p>
+              </div>
+              <p class="year-timeline">{{ item.year_ta }}</p>
+            </div>
+          </RecycleScroller>
+        </div>
         <!-- First track (English) -->
         <div class="items-row">
           <RecycleScroller
@@ -16,28 +37,11 @@
             v-slot="{ item }"
           >
             <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
-              <h3>{{ item.english_heading }}</h3>
-              <p>{{ item.english_long_text }}</p>
-              <p>{{ item.year_ce }}</p>
-            </div>
-          </RecycleScroller>
-        </div>
-        <!-- Second track (Tamil) -->
-        <div class="items-row">
-          <RecycleScroller
-            :buffer="50"
-            ref="recycleScroller2"
-            class="scroller"
-            :items="items"
-            :item-size="itemWidth"
-            direction="horizontal"
-            key-field="id"
-            v-slot="{ item }"
-          >
-            <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
-              <h3>{{ item.tamil_heading }}</h3>
-              <p>{{ item.tamil_long_text }}</p>
-              <p>{{ item.year_ta }}</p>
+              <div class="item-inner">
+                <h3>{{ item.english_heading }}</h3>
+                <p>{{ item.english_long_text }}</p>
+              </div>
+              <p class="year-timeline">{{ item.year_ce }}</p>
             </div>
           </RecycleScroller>
         </div>
@@ -120,6 +124,7 @@ export default defineComponent({
   components: { RecycleScroller },
   setup() {
     const items = ref<Item[]>([])
+    const items2 = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
     const recycleScroller = ref<HTMLElement | null>(null)
     const recycleScroller2 = ref<HTMLElement | null>(null)
@@ -407,7 +412,8 @@ export default defineComponent({
     }
 
     onMounted(async () => {
-      items.value = await getItems()
+      items.value = await getItems(500)
+      items2.value = await getItems(250)
       nextTick(() => {
         // Get references to both scrollers.
         const scrollers = document.querySelectorAll(
@@ -452,6 +458,7 @@ export default defineComponent({
 
     return {
       items,
+      items2,
       scrollContainer,
       minimap,
       minimapWidth,
@@ -517,9 +524,9 @@ export default defineComponent({
 .item {
   width: 200px;
   height: calc((100vh - 80px) / 2);
-  border: 1px solid var(--color-border);
   box-sizing: border-box;
-  background-color: var(--color-background);
+  /* background-color: var(--color-background); */
+  background-color: transparent;
   color: var(--color-text);
   flex-shrink: 0;
 }
@@ -702,18 +709,33 @@ export default defineComponent({
 }
 .fixed-arrow {
   position: fixed;
-  bottom: 160px;
+  bottom: 114px;
   left: 50%;
   transform: translateX(-50%);
   width: 0;
   height: 0;
   border-left: 10px solid transparent;
   border-right: 10px solid transparent;
-  border-bottom: 10px solid var(--color-background-soft);
+  border-bottom: 10px solid black;
   z-index: 10;
 }
 .tick-label {
   position: relative;
   left: -50%;
+}
+.item-inner {
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 10px;
+  cursor: pointer;
+  height: 96%;
+  padding-top: 90%;
+}
+
+.year-timeline {
+  background-color: var(--color-background);
+  position: fixed;
+  bottom: 0;
+  top: auto;
+  width: 100%;
 }
 </style>
