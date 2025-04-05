@@ -3,17 +3,20 @@
     <!-- Scrollable content: Items & Timeline aligned at bottom -->
     <div ref="scrollContainer" class="scroll-container">
       <div class="bottom-content">
-        <!-- Items Row -->
         <div class="items-row">
-          <div
-            v-for="(item, index) in items"
-            :key="index"
-            class="item"
-            :class="{ 'hidden-item': !categoryFilter[item.category] }"
+          <RecycleScroller
+            class="scroller"
+            :items="items"
+            :item-size="210"
+            direction="horizontal"
+            key-field="id"
+            v-slot="{ item }"
           >
-            <h3>{{ item.english_heading }}</h3>
-            <p>{{ item.english_long_text }}</p>
-          </div>
+            <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
+              <h3>{{ item.english_heading }}</h3>
+              <p>{{ item.english_long_text }}</p>
+            </div>
+          </RecycleScroller>
         </div>
         <!-- Timeline Row -->
         <div class="timeline-row">
@@ -106,9 +109,11 @@
 <script lang="ts">
 import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { getItems, type Item } from '@/services/dataService'
+import TimelineItems from '@/components/timeline/TimelineItems.vue'
 
 export default defineComponent({
   name: 'HorizontalTimeline',
+  components: { TimelineItems },
   setup() {
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
@@ -837,5 +842,10 @@ export default defineComponent({
   border-right: 10px solid transparent;
   border-bottom: 10px solid var(--color-background-soft);
   z-index: 10;
+}
+
+.scroller {
+  height: 300px; /* Adjusted to match the item height */
+  width: 100%;
 }
 </style>

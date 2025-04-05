@@ -1,4 +1,5 @@
 export interface Item {
+  id: number
   tamil_heading: string
   english_heading: string
   year_ce: number
@@ -27,7 +28,8 @@ export function getItems(): Promise<Item[]> {
   const items: Item[] = []
 
   // Generate 500 items.
-  for (let i = 0; i < 500; i++) {
+  for (let i = 0; i < 100; i++) {
+    const id = i + 1 // Unique ID for each item.
     // Randomly generate a year_ce between -5000 (5000 BC) and 2100 (2100 AC).
     const year_ce = Math.floor(Math.random() * (2100 - -5000 + 1)) + -5000
     const year_ta = year_ce - 300 // Following the sample pattern.
@@ -56,6 +58,7 @@ export function getItems(): Promise<Item[]> {
     ]
 
     items.push({
+      id,
       tamil_heading,
       english_heading,
       year_ce,
