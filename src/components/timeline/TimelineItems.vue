@@ -2,6 +2,7 @@
   <div class="items-row">
     <RecycleScroller
       class="scroller"
+      ref="scroller"
       :items="items"
       :item-size="210"
       direction="horizontal"
@@ -17,7 +18,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from 'vue'
+import { defineComponent, defineExpose, ref } from 'vue'
 import type { Item } from '@/services/dataService'
 
 export default defineComponent({
@@ -30,6 +31,11 @@ export default defineComponent({
     categoryFilter: {
       type: Object as () => Record<string, boolean>,
       required: true,
+    },
+    setup() {
+      const scroller = ref<HTMLElement | null>(null)
+      defineExpose({ scroller })
+      return { scroller }
     },
   },
 })

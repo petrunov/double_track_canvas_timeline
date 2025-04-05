@@ -5,9 +5,11 @@
       <div class="bottom-content">
         <div class="items-row">
           <RecycleScroller
+            :buffer="50"
+            ref="recycleScroller"
             class="scroller"
             :items="items"
-            :item-size="210"
+            :item-size="200"
             direction="horizontal"
             key-field="id"
             v-slot="{ item }"
@@ -15,11 +17,15 @@
             <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
               <h3>{{ item.english_heading }}</h3>
               <p>{{ item.english_long_text }}</p>
+              <p>{{ item.year_ce }}</p>
+            </div>
+            <div class="timeline-item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
+              {{ item.year_ce }}
             </div>
           </RecycleScroller>
         </div>
         <!-- Timeline Row -->
-        <div class="timeline-row">
+        <!-- <div class="timeline-row">
           <div
             v-for="(item, index) in items"
             :key="index"
@@ -29,7 +35,7 @@
             {{ item.year_ce }}
           </div>
           <div class="timeline-spacer"></div>
-        </div>
+        </div> -->
       </div>
     </div>
 
@@ -117,6 +123,7 @@ export default defineComponent({
   setup() {
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
+    const recycleScroller = ref<HTMLElement | null>(null)
     const minimap = ref<HTMLElement | null>(null)
     const minimapIndicatorStyle = ref<{ width: string; left: string }>({
       width: '0px',
@@ -158,12 +165,6 @@ export default defineComponent({
       { immediate: true },
     )
 
-    // Animation offsets for items.
-    const initialX = 150
-    const initialY = -250
-    const finalX = 0
-    const finalY = -5
-
     // For freezing the minimap indicator after dragging.
     const freezeIndicator = ref(false)
     const indicatorTargetScrollLeft = ref(0)
@@ -171,10 +172,14 @@ export default defineComponent({
     // Convert vertical wheel events to horizontal scrolling.
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
-      if (scrollContainer.value) {
-        const scrollStep = 2
-        const newScrollLeft = scrollContainer.value.scrollLeft + e.deltaY * scrollStep
-        scrollContainer.value.scrollTo({ left: newScrollLeft, behavior: 'smooth' })
+      if (recycleScroller.value && scrollContainer.value) {
+        const scrollStep = 8
+        const newScrollLeft = recycleScroller.value.scrollLeft + e.deltaY * scrollStep
+
+        recycleScroller.value?.scrollTo({
+          left: newScrollLeft,
+          behavior: 'smooth',
+        })
       }
     }
 
@@ -188,8 +193,8 @@ export default defineComponent({
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging = true
       startX = e.pageX
-      if (scrollContainer.value) {
-        startScrollLeft = scrollContainer.value.scrollLeft
+      if (scrollContainer.value && recycleScroller.value) {
+        startScrollLeft = recycleScroller.value.scrollLeft
         scrollContainer.value.classList.add('dragging')
       }
       document.body.classList.add('no-select')
@@ -204,10 +209,14 @@ export default defineComponent({
     }
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !scrollContainer.value) return
+      if (!isDragging || !recycleScroller.value) return
       e.preventDefault()
       const dx = e.pageX - startX
-      scrollContainer.value.scrollLeft = startScrollLeft - dx
+      // scrollContainer.value.scrollLeft = startScrollLeft - dx;
+      recycleScroller.value?.scrollTo({
+        left: startScrollLeft - dx,
+        behavior: 'auto',
+      })
     }
 
     // Update minimap width based on content
@@ -215,7 +224,9 @@ export default defineComponent({
       if (!scrollContainer.value) return
 
       const viewportWidth = window.innerWidth
-      const contentWidth = scrollContainer.value.scrollWidth
+      const contentWidth = items.value.length * 200 // Assuming each item is 200px wide
+
+      console.log(items.value.length, contentWidth)
 
       // A fixed scale factor when content is wide enough
       const fixedScale = 0.04
@@ -233,27 +244,10 @@ export default defineComponent({
     // Update transforms for item animations and minimap indicator.
     const updateTransforms = () => {
       if (!scrollContainer.value) return
-      const container = scrollContainer.value
+      if (!recycleScroller.value) return
+      const container = recycleScroller.value
       const containerWidth = container.clientWidth
       const scrollLeft = container.scrollLeft
-
-      // Update each item's transform.
-      const itemsElements = document.querySelectorAll('.item')
-      itemsElements.forEach((el) => {
-        if (el instanceof HTMLElement) {
-          const transitionRange = containerWidth / 4
-          const itemLeft = el.offsetLeft
-          let progress = (scrollLeft + containerWidth - itemLeft) / transitionRange
-          progress = Math.min(1, Math.max(0, progress))
-          if (itemLeft < scrollLeft) {
-            el.style.transform = `translate(${finalX}%, ${finalY}%)`
-          } else {
-            const translateX = initialX * (1 - progress) + finalX * progress
-            const translateY = initialY * (1 - progress) + finalY * progress
-            el.style.transform = `translate(${translateX}%, ${translateY}%)`
-          }
-        }
-      })
 
       // Update minimap scroll position (parallax effect)
       if (minimap.value && minimap.value.parentElement) {
@@ -330,6 +324,7 @@ export default defineComponent({
     ]
     const minimapRectangles = computed(() => {
       if (!items.value.length || !scrollContainer.value) return []
+      if (!items.value.length || !recycleScroller.value) return []
 
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
@@ -352,15 +347,13 @@ export default defineComponent({
       })
 
       // Calculate positions proportionally based on actual item positions
-      // Calculate positions proportionally based on actual item positions
-      // Calculate positions proportionally based on actual item positions
       return items.value.map((item) => {
         let left: number
         const itemLeft = itemPositions.get(item)
 
         if (itemLeft !== undefined) {
           // Position based on actual element position
-          left = (itemLeft / scrollContainer.value!.scrollWidth) * availableWidth + leftMargin
+          left = (itemLeft / recycleScroller.value!.scrollWidth) * availableWidth + leftMargin
         } else {
           // Fallback to year-based positioning
           const year = Number(item.year_ce)
@@ -395,13 +388,13 @@ export default defineComponent({
 
     // Handle clicks on the minimap.
     const onMinimapClick = (e: MouseEvent) => {
-      if (!scrollContainer.value || !minimap.value) return
+      if (!recycleScroller.value || !minimap.value) return
       const minimapElement = minimap.value
       const minimapRect = minimapElement.getBoundingClientRect()
       const clickX = e.clientX - minimapRect.left
       const minimapWidth = minimapElement.clientWidth
       const ratio = clickX / minimapWidth
-      const container = scrollContainer.value
+      const container = recycleScroller.value
       const totalScrollWidth = container.scrollWidth
       const containerWidth = container.clientWidth
       const newScrollLeft = ratio * totalScrollWidth - containerWidth / 2
@@ -423,7 +416,7 @@ export default defineComponent({
     }
 
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
-      if (!isIndicatorDragging.value || !scrollContainer.value || !minimap.value) return
+      if (!isIndicatorDragging.value || !recycleScroller.value || !minimap.value) return
       e.preventDefault()
       const dx = e.pageX - minimapDragStartX
       const minimapElement = minimap.value
@@ -432,9 +425,9 @@ export default defineComponent({
       let newLeft = indicatorInitialLeft + dx
       newLeft = Math.max(0, Math.min(newLeft, minimapWidth - indicatorWidth))
       minimapIndicatorStyle.value.left = newLeft + 'px'
-      const totalScrollWidth = scrollContainer.value.scrollWidth
+      const totalScrollWidth = recycleScroller.value.scrollWidth
       const newScrollLeft = (newLeft / minimapWidth) * totalScrollWidth
-      scrollContainer.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
+      recycleScroller.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
 
     const onMinimapIndicatorMouseUp = () => {
@@ -442,14 +435,14 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      if (scrollContainer.value && minimap.value) {
+      if (recycleScroller.value && minimap.value) {
         const minimapElement = minimap.value
         const minimapWidth = minimapElement.clientWidth
-        const totalScrollWidth = scrollContainer.value.scrollWidth
+        const totalScrollWidth = recycleScroller.value.scrollWidth
         const indicatorLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
         indicatorTargetScrollLeft.value = (indicatorLeft / minimapWidth) * totalScrollWidth
         freezeIndicator.value = true
-        scrollContainer.value.scrollTo({
+        recycleScroller.value.scrollTo({
           left: indicatorTargetScrollLeft.value,
           behavior: 'smooth',
         })
@@ -459,10 +452,17 @@ export default defineComponent({
     onMounted(async () => {
       items.value = await getItems()
 
-      if (scrollContainer.value) {
-        scrollContainer.value.addEventListener('wheel', handleWheel, { passive: false })
-        scrollContainer.value.addEventListener('scroll', updateTransforms)
-      }
+      // if (scrollContainer.value) {
+      //   scrollContainer.value.addEventListener('wheel', handleWheel, { passive: false })
+      //   scrollContainer.value.addEventListener('scroll', updateTransforms)
+      // }
+      nextTick(() => {
+        recycleScroller.value = document.querySelector('.vue-recycle-scroller') as HTMLElement
+        if (recycleScroller.value) {
+          recycleScroller.value.addEventListener('wheel', handleWheel, { passive: false })
+          recycleScroller.value.addEventListener('scroll', updateTransforms)
+        }
+      })
 
       document.addEventListener('mousedown', onMouseDown)
       document.addEventListener('mousemove', onMouseMove)
@@ -483,6 +483,10 @@ export default defineComponent({
           updateMinimapWidth()
           updateTransforms()
         })
+
+        // Manually query for the scroller element.
+        recycleScroller.value = document.querySelector('.vue-recycle-scroller') as HTMLElement
+        console.log('RecycleScroller DOM element:', recycleScroller.value)
       })
     })
 
@@ -577,14 +581,14 @@ export default defineComponent({
   width: 200px;
   height: 300px;
   border: 1px solid var(--color-border);
-  margin-right: 10px;
+  /* margin-right: 10px; */
+  /* padding: 10px; */
   box-sizing: border-box;
-  padding: 10px;
   background-color: var(--color-background);
   color: var(--color-text);
   flex-shrink: 0;
-  transform: translate(150%, -150%);
-  transition: transform 0.5s ease-out;
+  /* transform: translate(150%, -150%);
+  transition: transform 0.5s ease-out; */
 }
 
 .item.no-transition {
@@ -601,8 +605,14 @@ export default defineComponent({
   visibility: hidden;
 }
 
+.scroller {
+  height: 400px; /* Adjusted to match the item height */
+  width: 100%;
+  outline: 1px solid red;
+}
+
 /* Timeline Row */
-.timeline-row {
+/* .timeline-row {
   width: max-content;
   display: flex;
   flex-direction: row;
@@ -610,16 +620,16 @@ export default defineComponent({
   height: 30px;
   background-color: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
-}
+} */
 
 .timeline-item {
-  width: 200px;
-  padding: 0 10px;
-  margin-right: 10px;
+  /* padding: 0 10px; */
+  /* margin-right: 10px; */
   text-align: center;
   line-height: 50px;
   flex-shrink: 0;
   color: var(--color-text);
+  background: red;
 }
 
 .timeline-spacer {
@@ -842,10 +852,5 @@ export default defineComponent({
   border-right: 10px solid transparent;
   border-bottom: 10px solid var(--color-background-soft);
   z-index: 10;
-}
-
-.scroller {
-  height: 300px; /* Adjusted to match the item height */
-  width: 100%;
 }
 </style>

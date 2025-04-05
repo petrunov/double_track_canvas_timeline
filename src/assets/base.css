@@ -90,3 +90,11 @@ body.dragging * {
   cursor: grabbing;
   user-select: none;
 }
+
+.vue-recycle-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.vue-recycle-scroller {
+  scrollbar-width: none; /* For Firefox */
+}
