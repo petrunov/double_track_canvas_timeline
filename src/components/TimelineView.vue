@@ -511,7 +511,7 @@ export default defineComponent({
 }
 .item {
   width: 200px;
-  height: 300px;
+  height: calc((100vh - 80px) / 2);
   border: 1px solid var(--color-border);
   box-sizing: border-box;
   background-color: var(--color-background);
@@ -529,9 +529,14 @@ export default defineComponent({
   visibility: hidden;
 }
 .scroller {
-  height: 400px;
+  height: calc((100vh - 80px) / 2);
   width: 100%;
 }
+:deep(.vue-recycle-scroller__item-wrapper) > .item {
+  top: auto !important;
+  bottom: 0 !important;
+}
+
 .minimap-container {
   position: fixed;
   bottom: 40px;
