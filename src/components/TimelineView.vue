@@ -600,7 +600,7 @@ export default defineComponent({
   position: absolute;
   height: 100%;
   box-sizing: border-box;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(235, 235, 235, 0.5);
 }
 .minimap-indicator .crosshair-lines {
   position: absolute;
@@ -615,7 +615,7 @@ export default defineComponent({
 .minimap-indicator .crosshair-lines::after {
   content: '';
   position: absolute;
-  background-color: white;
+  background-color: var(--color-text);
 }
 .minimap-indicator .crosshair-lines::before {
   width: 1px;
@@ -635,7 +635,7 @@ export default defineComponent({
   position: absolute;
   width: 10px;
   height: 10px;
-  border: 2px solid white;
+  border: 2px solid var(--color-text);
   pointer-events: none;
 }
 .minimap-indicator .corner.top-left {
@@ -664,7 +664,7 @@ export default defineComponent({
 }
 .minimap-indicator.dragging-indicator {
   cursor: grabbing;
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(235, 235, 235, 0.5);
 }
 .category-filters {
   position: fixed;
