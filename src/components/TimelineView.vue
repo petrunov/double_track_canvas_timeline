@@ -3,6 +3,7 @@
     <!-- Scrollable content using RecycleScroller -->
     <div ref="scrollContainer" class="scroll-container">
       <div class="bottom-content">
+        <!-- First track (English) -->
         <div class="items-row">
           <RecycleScroller
             :buffer="50"
@@ -18,6 +19,25 @@
               <h3>{{ item.english_heading }}</h3>
               <p>{{ item.english_long_text }}</p>
               <p>{{ item.year_ce }}</p>
+            </div>
+          </RecycleScroller>
+        </div>
+        <!-- Second track (Tamil) -->
+        <div class="items-row">
+          <RecycleScroller
+            :buffer="50"
+            ref="recycleScroller2"
+            class="scroller"
+            :items="items"
+            :item-size="itemWidth"
+            direction="horizontal"
+            key-field="id"
+            v-slot="{ item }"
+          >
+            <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
+              <h3>{{ item.tamil_heading }}</h3>
+              <p>{{ item.tamil_long_text }}</p>
+              <p>{{ item.year_ta }}</p>
             </div>
           </RecycleScroller>
         </div>
@@ -107,21 +127,30 @@ export default defineComponent({
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
     const recycleScroller = ref<HTMLElement | null>(null)
+    const recycleScroller2 = ref<HTMLElement | null>(null)
     const minimap = ref<HTMLElement | null>(null)
     const minimapIndicatorStyle = ref<{ width: string; left: string }>({
       width: '0px',
       left: '0px',
     })
     const isIndicatorDragging = ref(false)
-    const itemWidth = 200 // Each item is 200px wide
+    const itemWidth = 200
 
-    // Total content width based on the number of items.
+    // Total content width.
     const totalContentWidth = computed(() => items.value.length * itemWidth)
-
-    // The minimap width is fixed to the viewport width.
+    // The minimap width equals viewport width.
     const minimapWidth = ref(window.innerWidth)
 
-    // Category filter setup.
+    // Helper: Compute indicator width.
+    const computeIndicatorWidth = (): number => {
+      const leftMargin = 20,
+        rightMargin = 20
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
+      const viewportWidth = recycleScroller.value!.clientWidth
+      return Math.max((availableWidth * viewportWidth) / totalContentWidth.value, 10)
+    }
+
+    // Category filter.
     const categoryFilter = ref<Record<string, boolean>>({})
     const categories = computed(() => Array.from(new Set(items.value.map((item) => item.category))))
     const allChecked = computed({
@@ -146,7 +175,6 @@ export default defineComponent({
       { immediate: true },
     )
 
-    // Update the minimap width to always equal the viewport.
     const updateMinimapWidth = () => {
       minimapWidth.value = window.innerWidth
       updateTransforms()
@@ -190,24 +218,17 @@ export default defineComponent({
 
     // Update the indicator's size and position.
     const updateTransforms = () => {
-      if (isIndicatorDragging.value) return
-      if (!recycleScroller.value) return
-
+      if (isIndicatorDragging.value || !recycleScroller.value) return
       const container = recycleScroller.value
       const viewportWidth = container.clientWidth
       const scrollLeft = container.scrollLeft
       const totalWidth = totalContentWidth.value
 
-      // Use the same margins as in the drag code.
       const leftMargin = 20,
         rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-
-      // Calculate the indicator's width based on visible content.
       const visibleRatio = viewportWidth / totalWidth
-      const indicatorWidth = Math.max(availableWidth * visibleRatio - 10, 10)
-
-      // Compute the left offset relative to the available area, then add leftMargin.
+      const indicatorWidth = Math.max(availableWidth * visibleRatio, 10)
       const indicatorLeft = leftMargin + (scrollLeft / totalWidth) * availableWidth
 
       minimapIndicatorStyle.value = {
@@ -215,7 +236,7 @@ export default defineComponent({
         left: indicatorLeft + 'px',
       }
 
-      // Update the minimap's own scroll for parallax.
+      // Update minimap parallax.
       if (minimap.value && minimap.value.parentElement) {
         const minimapParent = minimap.value.parentElement
         const minimapScrollRange = minimapWidth.value - minimapParent.clientWidth
@@ -224,7 +245,7 @@ export default defineComponent({
       }
     }
 
-    // Timeline ticks based on the items’ year_ce.
+    // Timeline ticks.
     const timelineTicks = computed(() => {
       if (!items.value.length) return []
       const leftMargin = 20,
@@ -252,7 +273,7 @@ export default defineComponent({
       return ticks
     })
 
-    // Minimap rectangles for each item.
+    // Minimap rectangles.
     const totalRows = 5
     const colorPalette = [
       '#f44336',
@@ -273,9 +294,7 @@ export default defineComponent({
       const maxYear = Math.max(...years)
       const span = maxYear - minYear || 1
       return items.value.map((item) => {
-        // Calculate left position based on the item's year
         const left = leftMargin + ((Number(item.year_ce) - minYear) / span) * availableWidth - 5
-        // Use your preferred method for vertical placement:
         const rowIndex = items.value.indexOf(item) % totalRows
         const top = 35 + rowIndex * 4
         const catIndex = categories.value.indexOf(item.category)
@@ -290,11 +309,9 @@ export default defineComponent({
       })
     })
 
-    // Helper function: Given a target year, find the item index closest to that year
-    // and return a scroll position to center that item.
+    // Helper: Given a target year, find the closest item and return a scrollLeft to center it.
     const getScrollPositionForYear = (targetYear: number): number => {
       if (!items.value.length || !recycleScroller.value) return 0
-      // Find the closest item (assumes items is unsorted or sorted by year_ce)
       const closestIndex = items.value.reduce((prevIndex, currItem, index) => {
         const currYear = Number(currItem.year_ce)
         return Math.abs(currYear - targetYear) <
@@ -302,20 +319,16 @@ export default defineComponent({
           ? index
           : prevIndex
       }, 0)
-
-      // Compute scroll so that the item is centered in the visible area.
       const scrollerWidth = recycleScroller.value.clientWidth
       const targetScroll = closestIndex * itemWidth - (scrollerWidth - itemWidth) / 2
-
       return Math.max(0, Math.min(targetScroll, totalContentWidth.value - scrollerWidth))
     }
 
-    // When clicking on the minimap (outside the indicator), scroll so that the clicked point is centered.
+    // Drag indicator tracking.
     let indicatorDragStartX = 0
     let indicatorDragged = false
 
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
-      // Prevent the event from bubbling up.
       e.stopPropagation()
       isIndicatorDragging.value = true
       indicatorDragStartX = e.clientX
@@ -328,40 +341,24 @@ export default defineComponent({
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
       if (!isIndicatorDragging.value || !minimap.value || !recycleScroller.value) return
       e.preventDefault()
-
-      // If the movement is more than 5 pixels, consider it a drag.
       if (!indicatorDragged && Math.abs(e.clientX - indicatorDragStartX) > 5) {
         indicatorDragged = true
       }
-
-      // Existing dragging logic to update the indicator's position and timeline scroll:
       const leftMargin = 20,
         rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
       const minimapContainer = minimap.value.parentElement
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
-
-      // Calculate the indicator's width (using your existing logic)
-      const viewportWidth = recycleScroller.value.clientWidth
-      const indicatorWidth = Math.max(
-        (availableWidth * viewportWidth) / totalContentWidth.value - 10,
-        10,
-      )
-
-      // Compute new center position relative to the available minimap area.
+      const indicatorWidth = computeIndicatorWidth()
       let newCenter = e.clientX - containerRect.left + minimapContainer.scrollLeft - leftMargin
       newCenter = Math.max(
         indicatorWidth / 2,
         Math.min(newCenter, availableWidth - indicatorWidth / 2),
       )
-
-      // Update indicator position so its center aligns with newCenter.
       const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-
-      // Map newCenter to a target year and update timeline scroll accordingly.
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
@@ -375,50 +372,53 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      updateTransforms()
     }
 
     const onMinimapClick = (e: MouseEvent) => {
-      // If the indicator was dragged, ignore the click.
       if (indicatorDragged) {
-        indicatorDragged = false // reset for next time
+        indicatorDragged = false
         return
       }
-      if (!recycleScroller.value) return null
-
-      // Proceed with normal minimap click handling.
+      if (!recycleScroller.value || !minimap.value) return
+      const minimapContainer = minimap.value.parentElement
+      if (!minimapContainer) return
+      const containerRect = minimapContainer.getBoundingClientRect()
       const leftMargin = 20,
         rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      if (!minimap.value) return
-      const minimapRect = minimap.value.getBoundingClientRect()
-
-      let newCenter = e.clientX - minimapRect.left - leftMargin
-      const viewportWidth = recycleScroller.value.clientWidth
-      const indicatorWidth = Math.max(
-        (availableWidth * viewportWidth) / totalContentWidth.value - 10,
-        10,
-      )
+      let newCenter = e.clientX - containerRect.left + minimapContainer.scrollLeft - leftMargin
+      const indicatorWidth = computeIndicatorWidth()
       newCenter = Math.max(
         indicatorWidth / 2,
         Math.min(newCenter, availableWidth - indicatorWidth / 2),
       )
-
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
-      const targetScroll = getScrollPositionForYear(targetYear)
-      recycleScroller.value.scrollTo({ left: targetScroll, behavior: 'smooth' })
+      const correctedScroll = getScrollPositionForYear(targetYear) - indicatorWidth / 2
+      recycleScroller.value.scrollTo({ left: correctedScroll, behavior: 'smooth' })
+    }
+
+    // Sync scroll of recycleScroller2 with recycleScroller.
+    const syncScroll = () => {
+      if (recycleScroller.value && recycleScroller2.value) {
+        recycleScroller2.value.scrollLeft = recycleScroller.value.scrollLeft
+      }
+      updateTransforms()
     }
 
     onMounted(async () => {
       items.value = await getItems()
       nextTick(() => {
-        recycleScroller.value = document.querySelector('.vue-recycle-scroller') as HTMLElement
+        // Get reference to the primary scroller.
+        recycleScroller.value = document.querySelectorAll('.vue-recycle-scroller')[0] as HTMLElement
+        recycleScroller2.value = document.querySelectorAll(
+          '.vue-recycle-scroller',
+        )[1] as HTMLElement
         if (recycleScroller.value) {
           recycleScroller.value.addEventListener('wheel', handleWheel, { passive: false })
-          recycleScroller.value.addEventListener('scroll', updateTransforms)
+          recycleScroller.value.addEventListener('scroll', syncScroll)
         }
       })
       document.addEventListener('mousedown', onMouseDown)
@@ -435,9 +435,10 @@ export default defineComponent({
         }, 50)
       })
     })
+
     onUnmounted(() => {
       recycleScroller.value?.removeEventListener('wheel', handleWheel)
-      recycleScroller.value?.removeEventListener('scroll', updateTransforms)
+      recycleScroller.value?.removeEventListener('scroll', syncScroll)
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
@@ -701,7 +702,6 @@ export default defineComponent({
   border-bottom: 10px solid var(--color-background-soft);
   z-index: 10;
 }
-
 .tick-label {
   position: relative;
   left: -50%;
