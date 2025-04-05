@@ -145,7 +145,7 @@ export default defineComponent({
       if (recycleScroller.value) {
         recycleScroller.value.scrollTo({ left: scrollLeft, behavior: 'auto' })
       }
-    }, 100)
+    }, 1)
 
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
@@ -241,28 +241,32 @@ export default defineComponent({
     // --- Syncing Scrollers & Updating Minimap ---
     const updateTransforms = () => {
       if (isIndicatorDragging.value || !recycleScroller.value) return
+
       const container = recycleScroller.value
       const viewportWidth = container.clientWidth
       const scrollLeft = container.scrollLeft
       const totalWidth = totalContentWidth.value
 
-      const leftMargin = 20,
-        rightMargin = 20
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const visibleRatio = viewportWidth / totalWidth
-      const indicatorWidth = Math.max(availableWidth * visibleRatio, 10)
-      const indicatorLeft = leftMargin + (scrollLeft / totalWidth) * availableWidth
+      // Calculate indicator width (using the entire minimap width as reference).
+      const indicatorWidth = Math.max((viewportWidth / totalWidth) * minimapWidth.value, 10)
+      // Compute maximum scrollable offset and maximum indicator travel distance.
+      const maxScroll = totalWidth - viewportWidth
+      const maxIndicatorTravel = minimapWidth.value - indicatorWidth
+      // Compute indicator left position directly.
+      const indicatorLeft = (scrollLeft / maxScroll) * maxIndicatorTravel - indicatorWidth / 2
+
+      console.log('Indicator Left:', indicatorLeft)
 
       minimapIndicatorStyle.value = {
         width: indicatorWidth + 'px',
         left: indicatorLeft + 'px',
       }
 
-      // Update minimap parallax.
+      // Optionally update minimap parallax (if needed).
       if (minimap.value && minimap.value.parentElement) {
         const minimapParent = minimap.value.parentElement
         const minimapScrollRange = minimapWidth.value - minimapParent.clientWidth
-        const ratio = scrollLeft / (totalWidth - viewportWidth)
+        const ratio = scrollLeft / maxScroll
         minimapParent.scrollLeft = ratio * minimapScrollRange
       }
     }
@@ -409,32 +413,41 @@ export default defineComponent({
 
     // --- Minimap Click ---
     const onMinimapClick = (e: MouseEvent) => {
-      if (indicatorDragged) {
-        indicatorDragged = false
-        return
-      }
       if (!recycleScroller.value) return
+
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
 
-      const availableWidth = minimapWidth.value
-      let newCenter = e.clientX - containerRect.left
-      const indicatorWidth = computeIndicatorWidth()
-      newCenter = Math.max(
-        indicatorWidth / 2,
-        Math.min(newCenter, availableWidth - indicatorWidth / 2),
+      // Calculate click position relative to the minimap container.
+      let newIndicatorLeft = e.clientX - containerRect.left
+
+      // Calculate indicator width and clamp newIndicatorLeft accordingly.
+      const viewportWidth = recycleScroller.value.clientWidth
+      const indicatorWidth = Math.max(
+        (viewportWidth / totalContentWidth.value) * minimapWidth.value,
+        10,
       )
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
-      const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
-      const correctedScroll = getScrollPositionForYear(targetYear) - indicatorWidth / 2
-      debouncedScrollTo(correctedScroll)
+      newIndicatorLeft = Math.max(
+        0,
+        Math.min(newIndicatorLeft, minimapWidth.value - indicatorWidth),
+      )
+
+      // Set the indicator position directly.
+      minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
+      minimapIndicatorStyle.value.width = indicatorWidth + 'px'
+
+      // Calculate ratio and determine target scroll.
+      const maxIndicatorTravel = minimapWidth.value - indicatorWidth
+      const ratio = newIndicatorLeft / maxIndicatorTravel
+      const maxScroll = totalContentWidth.value - viewportWidth
+      const targetScroll = ratio * maxScroll
+
+      debouncedScrollTo(targetScroll)
     }
 
     onMounted(async () => {
-      items.value = await getItems(5000)
+      items.value = await getItems(3000)
       nextTick(() => {
         // Get references to both scrollers.
         const scrollers = document.querySelectorAll(
