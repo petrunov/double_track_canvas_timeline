@@ -3,27 +3,6 @@
     <!-- Scrollable content using RecycleScroller -->
     <div ref="scrollContainer" class="scroll-container">
       <div class="bottom-content">
-        <!-- Second track (Tamil) -->
-        <div class="items-row">
-          <RecycleScroller
-            :buffer="50"
-            ref="recycleScroller2"
-            class="scroller"
-            :items="items2"
-            :item-size="itemWidth"
-            direction="horizontal"
-            key-field="id"
-            v-slot="{ item }"
-          >
-            <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
-              <div class="item-inner">
-                <h3>{{ item.tamil_heading }}</h3>
-                <p>{{ item.tamil_long_text }}</p>
-              </div>
-              <p class="year-timeline">{{ item.year_ta }}</p>
-            </div>
-          </RecycleScroller>
-        </div>
         <!-- First track (English) -->
         <div class="items-row">
           <RecycleScroller
@@ -36,8 +15,35 @@
             key-field="id"
             v-slot="{ item }"
           >
-            <div class="item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
-              <div class="item-inner">
+            <div class="item">
+              <div
+                class="item-inner"
+                :class="{ 'hidden-item': item.type === 'world' || !categoryFilter[item.category] }"
+              >
+                <h3>{{ item.tamil_heading }}</h3>
+                <p>{{ item.tamil_long_text }}</p>
+              </div>
+              <p class="year-timeline">{{ item.year_ta }}</p>
+            </div>
+          </RecycleScroller>
+        </div>
+        <!-- Second track (Tamil) -->
+        <div class="items-row">
+          <RecycleScroller
+            :buffer="50"
+            ref="recycleScroller2"
+            class="scroller"
+            :items="items"
+            :item-size="itemWidth"
+            direction="horizontal"
+            key-field="id"
+            v-slot="{ item }"
+          >
+            <div class="item">
+              <div
+                class="item-inner"
+                :class="{ 'hidden-item': item.type === 'tamil' || !categoryFilter[item.category] }"
+              >
                 <h3>{{ item.english_heading }}</h3>
                 <p>{{ item.english_long_text }}</p>
               </div>
@@ -124,7 +130,6 @@ export default defineComponent({
   components: { RecycleScroller },
   setup() {
     const items = ref<Item[]>([])
-    const items2 = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
     const recycleScroller = ref<HTMLElement | null>(null)
     const recycleScroller2 = ref<HTMLElement | null>(null)
@@ -325,15 +330,14 @@ export default defineComponent({
     // Helper: Given a target year, find the closest item and return a scrollLeft to center it.
     const getScrollPositionForYear = (targetYear: number): number => {
       if (!items.value.length || !recycleScroller.value) return 0
-      const closestIndex = items.value.reduce((prevIndex, currItem, index) => {
-        const currYear = Number(currItem.year_ce)
-        return Math.abs(currYear - targetYear) <
-          Math.abs(Number(items.value[prevIndex].year_ce) - targetYear)
-          ? index
-          : prevIndex
-      }, 0)
+      const years = items.value.map((item) => Number(item.year_ce))
+      const minYear = Math.min(...years)
+      const maxYear = Math.max(...years)
       const scrollerWidth = recycleScroller.value.clientWidth
-      const targetScroll = closestIndex * itemWidth - (scrollerWidth - itemWidth) / 2
+      // Compute continuous scroll position:
+      const targetScroll =
+        ((targetYear - minYear) / (maxYear - minYear)) * totalContentWidth.value -
+        (scrollerWidth - itemWidth) / 2
       return Math.max(0, Math.min(targetScroll, totalContentWidth.value - scrollerWidth))
     }
 
@@ -394,10 +398,9 @@ export default defineComponent({
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
-      const leftMargin = 20,
-        rightMargin = 20
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      let newCenter = e.clientX - containerRect.left - leftMargin
+
+      const availableWidth = minimapWidth.value
+      let newCenter = e.clientX - containerRect.left
       const indicatorWidth = computeIndicatorWidth()
       newCenter = Math.max(
         indicatorWidth / 2,
@@ -407,13 +410,13 @@ export default defineComponent({
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
-      const correctedScroll = getScrollPositionForYear(targetYear) - indicatorWidth / 2
+
+      const correctedScroll = getScrollPositionForYear(targetYear)
       recycleScroller.value.scrollTo({ left: correctedScroll, behavior: 'auto' })
     }
 
     onMounted(async () => {
-      items.value = await getItems(500)
-      items2.value = await getItems(250)
+      items.value = await getItems(5000)
       nextTick(() => {
         // Get references to both scrollers.
         const scrollers = document.querySelectorAll(
@@ -458,7 +461,6 @@ export default defineComponent({
 
     return {
       items,
-      items2,
       scrollContainer,
       minimap,
       minimapWidth,
@@ -716,7 +718,7 @@ export default defineComponent({
   height: 0;
   border-left: 10px solid transparent;
   border-right: 10px solid transparent;
-  border-bottom: 10px solid black;
+  border-bottom: 10px solid var(--color-background);
   z-index: 10;
 }
 .tick-label {
@@ -737,5 +739,6 @@ export default defineComponent({
   bottom: 0;
   top: auto;
   width: 100%;
+  text-align: center;
 }
 </style>

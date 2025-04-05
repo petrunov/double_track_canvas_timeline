@@ -11,6 +11,20 @@ export interface Item {
   category: string
   index: number
   date: string
+  type: string
+}
+
+// Helper conversion function using the Tamil Vikram era.
+// The Tamil Vikram era is defined such that 3112 BCE is year 1.
+// For CE years (year >= 1), we use: Tamil Year = CE Year + 3112.
+// For BCE years (year < 1), we use: Tamil Year = 3113 + CE Year.
+function convertToTamilVikramEra(yearCE: number): number {
+  if (yearCE >= 1) {
+    return yearCE + 3112
+  } else {
+    // For BCE years: For example, if yearCE = -3112 then Tamil year = 3113 + (-3112) = 1.
+    return 3113 + yearCE
+  }
 }
 
 export function getItems(len: number): Promise<Item[]> {
@@ -29,9 +43,10 @@ export function getItems(len: number): Promise<Item[]> {
 
   for (let i = 0; i < len; i++) {
     const id = i + 1 // Unique ID for each item.
-    // Randomly generate a year_ce between -5000 (5000 BC) and 2100 (2100 AC).
+    // Randomly generate a year_ce between -5000 (5000 BCE) and 2100 (2100 AD).
     const year_ce = Math.floor(Math.random() * (2100 - -5000 + 1)) + -5000
-    const year_ta = year_ce - 300 // Following the sample pattern.
+    // Convert the CE year to the Tamil Vikram year.
+    const year_ta = convertToTamilVikramEra(year_ce)
 
     // Randomly select a category.
     const category = categories[Math.floor(Math.random() * categories.length)]
@@ -56,6 +71,9 @@ export function getItems(len: number): Promise<Item[]> {
       `https://example.com/${category}${index}b.jpg`,
     ]
 
+    // Randomly assign type to be 'tamil' or 'world'
+    const type = Math.random() < 0.5 ? 'tamil' : 'world'
+
     items.push({
       id,
       tamil_heading,
@@ -69,6 +87,7 @@ export function getItems(len: number): Promise<Item[]> {
       category,
       index,
       date,
+      type,
     })
   }
 
