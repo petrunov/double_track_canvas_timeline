@@ -27,8 +27,7 @@ export function getItems(): Promise<Item[]> {
 
   const items: Item[] = []
 
-  // Generate 500 items.
-  for (let i = 0; i < 2000; i++) {
+  for (let i = 0; i < 5000; i++) {
     const id = i + 1 // Unique ID for each item.
     // Randomly generate a year_ce between -5000 (5000 BC) and 2100 (2100 AC).
     const year_ce = Math.floor(Math.random() * (2100 - -5000 + 1)) + -5000
