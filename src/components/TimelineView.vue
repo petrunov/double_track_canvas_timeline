@@ -1,6 +1,6 @@
 <template>
   <div class="main">
-    <!-- Scrollable content: Items & Timeline aligned at bottom -->
+    <!-- Scrollable content using RecycleScroller -->
     <div ref="scrollContainer" class="scroll-container">
       <div class="bottom-content">
         <div class="items-row">
@@ -9,7 +9,7 @@
             ref="recycleScroller"
             class="scroller"
             :items="items"
-            :item-size="200"
+            :item-size="itemWidth"
             direction="horizontal"
             key-field="id"
             v-slot="{ item }"
@@ -19,27 +19,12 @@
               <p>{{ item.english_long_text }}</p>
               <p>{{ item.year_ce }}</p>
             </div>
-            <div class="timeline-item" :class="{ 'hidden-item': !categoryFilter[item.category] }">
-              {{ item.year_ce }}
-            </div>
           </RecycleScroller>
         </div>
-        <!-- Timeline Row -->
-        <!-- <div class="timeline-row">
-          <div
-            v-for="(item, index) in items"
-            :key="index"
-            class="timeline-item"
-            :class="{ 'hidden-item': !categoryFilter[item.category] }"
-          >
-            {{ item.year_ce }}
-          </div>
-          <div class="timeline-spacer"></div>
-        </div> -->
       </div>
     </div>
 
-    <!-- Fixed minimap container that scrolls horizontally -->
+    <!-- Fixed minimap container (always equals viewport width) -->
     <div class="minimap-container">
       <div
         ref="minimap"
@@ -47,7 +32,7 @@
         @click="onMinimapClick"
         :style="{ width: minimapWidth + 'px' }"
       >
-        <!-- Timescale on top of the minimap -->
+        <!-- Timeline ticks -->
         <div class="minimap-timescale">
           <div
             v-for="(tick, index) in timelineTicks"
@@ -60,7 +45,7 @@
           </div>
         </div>
 
-        <!-- Minimap items as colored rectangles -->
+        <!-- Minimap item markers -->
         <div class="minimap-items">
           <div
             v-for="(rect, index) in minimapRectangles"
@@ -84,9 +69,7 @@
           @mousedown="onMinimapIndicatorMouseDown"
           @click.stop
         >
-          <!-- Crosshair plus sign in the center -->
           <div class="crosshair-lines"></div>
-          <!-- Corner markers -->
           <div class="corner top-left"></div>
           <div class="corner top-right"></div>
           <div class="corner bottom-left"></div>
@@ -95,7 +78,7 @@
       </div>
     </div>
 
-    <!-- Category filter row below the minimap -->
+    <!-- Category filters -->
     <div class="category-filters">
       <div class="category-filter">
         <input type="checkbox" v-model="allChecked" id="check-all" />
@@ -107,7 +90,7 @@
       </div>
     </div>
 
-    <!-- Fixed arrow element above the minimap -->
+    <!-- Fixed arrow element -->
     <div class="fixed-arrow"></div>
   </div>
 </template>
@@ -115,11 +98,11 @@
 <script lang="ts">
 import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { getItems, type Item } from '@/services/dataService'
-import TimelineItems from '@/components/timeline/TimelineItems.vue'
+import { RecycleScroller } from 'vue-virtual-scroller'
 
 export default defineComponent({
   name: 'HorizontalTimeline',
-  components: { TimelineItems },
+  components: { RecycleScroller },
   setup() {
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
@@ -130,17 +113,17 @@ export default defineComponent({
       left: '0px',
     })
     const isIndicatorDragging = ref(false)
-    const minimapWidth = ref(0)
-    const minimapScale = ref(0)
+    const itemWidth = 200 // Each item is 200px wide
 
-    // Category filter: key is category, value is boolean.
+    // Total content width based on the number of items.
+    const totalContentWidth = computed(() => items.value.length * itemWidth)
+
+    // The minimap width is fixed to the viewport width.
+    const minimapWidth = ref(window.innerWidth)
+
+    // Category filter setup.
     const categoryFilter = ref<Record<string, boolean>>({})
-
-    // Compute distinct categories from items.
-    const categories = computed(() => {
-      return Array.from(new Set(items.value.map((item) => item.category)))
-    })
-
+    const categories = computed(() => Array.from(new Set(items.value.map((item) => item.category))))
     const allChecked = computed({
       get() {
         return categories.value.every((cat) => categoryFilter.value[cat])
@@ -151,8 +134,6 @@ export default defineComponent({
         })
       },
     })
-
-    // When items are loaded, initialize the category filter.
     watch(
       () => items.value,
       () => {
@@ -165,153 +146,99 @@ export default defineComponent({
       { immediate: true },
     )
 
-    // For freezing the minimap indicator after dragging.
-    const freezeIndicator = ref(false)
-    const indicatorTargetScrollLeft = ref(0)
+    // Update the minimap width to always equal the viewport.
+    const updateMinimapWidth = () => {
+      minimapWidth.value = window.innerWidth
+      updateTransforms()
+    }
 
     // Convert vertical wheel events to horizontal scrolling.
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
-      if (recycleScroller.value && scrollContainer.value) {
+      if (recycleScroller.value) {
         const scrollStep = 8
         const newScrollLeft = recycleScroller.value.scrollLeft + e.deltaY * scrollStep
-
-        recycleScroller.value?.scrollTo({
-          left: newScrollLeft,
-          behavior: 'smooth',
-        })
+        recycleScroller.value.scrollTo({ left: newScrollLeft, behavior: 'smooth' })
       }
     }
 
     // Variables for dragging the scroll container.
-    let isDragging = false
-    let startX = 0
-    let startScrollLeft = 0
-
+    let isDragging = false,
+      startX = 0,
+      startScrollLeft = 0
     const onMouseDown = (e: MouseEvent) => {
-      // Avoid conflict with minimap indicator drag.
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging = true
-      startX = e.pageX
-      if (scrollContainer.value && recycleScroller.value) {
+      startX = e.clientX
+      if (recycleScroller.value && scrollContainer.value) {
         startScrollLeft = recycleScroller.value.scrollLeft
         scrollContainer.value.classList.add('dragging')
       }
       document.body.classList.add('no-select')
     }
-
     const onMouseUp = () => {
       isDragging = false
-      if (scrollContainer.value) {
-        scrollContainer.value.classList.remove('dragging')
-      }
+      scrollContainer.value?.classList.remove('dragging')
       document.body.classList.remove('no-select')
     }
-
     const onMouseMove = (e: MouseEvent) => {
       if (!isDragging || !recycleScroller.value) return
       e.preventDefault()
-      const dx = e.pageX - startX
-      // scrollContainer.value.scrollLeft = startScrollLeft - dx;
-      recycleScroller.value?.scrollTo({
-        left: startScrollLeft - dx,
-        behavior: 'auto',
-      })
+      const dx = e.clientX - startX
+      recycleScroller.value.scrollTo({ left: startScrollLeft - dx, behavior: 'auto' })
     }
 
-    // Update minimap width based on content
-    const updateMinimapWidth = () => {
-      if (!scrollContainer.value) return
-
-      const viewportWidth = window.innerWidth
-      const contentWidth = items.value.length * 200 // Assuming each item is 200px wide
-
-      console.log(items.value.length, contentWidth)
-
-      // A fixed scale factor when content is wide enough
-      const fixedScale = 0.04
-      // If the calculated minimap width would be less than the viewport,
-      // adjust the scale so that the minimap fills the viewport
-      if (contentWidth * fixedScale < viewportWidth) {
-        minimapScale.value = viewportWidth / contentWidth
-        minimapWidth.value = viewportWidth
-      } else {
-        minimapScale.value = fixedScale
-        minimapWidth.value = contentWidth * fixedScale
-      }
-    }
-
-    // Update transforms for item animations and minimap indicator.
+    // Update the indicator's size and position.
     const updateTransforms = () => {
-      if (!scrollContainer.value) return
+      // Do not update if the indicator is being dragged.
+      if (isIndicatorDragging.value) return
       if (!recycleScroller.value) return
       const container = recycleScroller.value
-      const containerWidth = container.clientWidth
+      const viewportWidth = container.clientWidth
       const scrollLeft = container.scrollLeft
+      const totalWidth = totalContentWidth.value
 
-      // Update minimap scroll position (parallax effect)
-      if (minimap.value && minimap.value.parentElement) {
-        const totalScrollWidth = container.scrollWidth
-        const minimapParent = minimap.value.parentElement
-        const minimapScrollRange = minimapWidth.value - minimapParent.clientWidth
+      // Calculate indicator width as the fraction of content visible.
+      const visibleRatio = viewportWidth / totalWidth
+      const indicatorWidth = minimapWidth.value * visibleRatio - 10
+      // Indicator left position is proportional to scrollLeft.
+      const indicatorLeft = (scrollLeft / totalWidth) * minimapWidth.value
 
-        // Create a parallax effect by using a non-linear relationship
-        // between content scroll and minimap scroll
-        const scrollRatio = scrollLeft / (totalScrollWidth - containerWidth)
-        minimapParent.scrollLeft = scrollRatio * minimapScrollRange
-      }
-
-      // Update minimap indicator if not dragging or frozen.
-      if (!isIndicatorDragging.value && !freezeIndicator.value) {
-        const totalScrollWidth = container.scrollWidth
-        const visibleRatio = containerWidth / totalScrollWidth
-        const indicatorWidth = minimapWidth.value * visibleRatio - 5
-        const indicatorLeft = (scrollLeft / totalScrollWidth) * minimapWidth.value
-        minimapIndicatorStyle.value = {
-          width: indicatorWidth + 'px',
-          left: indicatorLeft + 'px',
-        }
-      } else if (freezeIndicator.value) {
-        if (Math.abs(scrollLeft - indicatorTargetScrollLeft.value) < 5) {
-          freezeIndicator.value = false
-          updateTransforms()
-        }
+      minimapIndicatorStyle.value = {
+        width: indicatorWidth + 'px',
+        left: indicatorLeft + 'px',
       }
     }
 
-    // Computed ticks for the minimap timescale.
+    // Timeline ticks based on the items’ year_ce.
     const timelineTicks = computed(() => {
       if (!items.value.length) return []
-      const leftMargin = 20
-      const rightMargin = 20
+      const leftMargin = 20,
+        rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
       const span = maxYear - minYear || 1
-
-      const majorTickInterval = 500
-      const mediumTickInterval = 250
-      const minorTickInterval = 50
-
+      const majorTickInterval = 500,
+        mediumTickInterval = 250,
+        minorTickInterval = 50
       const startTick = Math.floor(minYear / minorTickInterval) * minorTickInterval
-      const endTick = Math.ceil(maxYear / minorTickInterval) * minorTickInterval
-
       const ticks = []
-      for (let year = startTick; year <= endTick; year += minorTickInterval) {
+      for (let year = startTick; year <= maxYear; year += minorTickInterval) {
         let type: 'major' | 'medium' | 'minor' = 'minor'
         if (year % majorTickInterval === 0) {
           type = 'major'
         } else if (year % mediumTickInterval === 0) {
           type = 'medium'
         }
-        const left = leftMargin + ((year - minYear) / span) * availableWidth - 3
+        const left = leftMargin + ((year - minYear) / span) * availableWidth
         ticks.push({ year, left, type })
       }
       return ticks
     })
 
-    // Computed property for minimap rectangles
+    // Minimap rectangles for each item.
     const totalRows = 5
     const colorPalette = [
       '#f44336',
@@ -323,62 +250,17 @@ export default defineComponent({
       '#795548',
     ]
     const minimapRectangles = computed(() => {
-      if (!items.value.length || !scrollContainer.value) return []
-      if (!items.value.length || !recycleScroller.value) return []
-
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
-      const leftMargin = 10
-      const rightMargin = 10
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const span = maxYear - minYear || 1
-
-      // Create a mapping of items by their position
-      const itemPositions = new Map()
-      items.value.forEach((item, index) => {
-        // Find the actual timeline item element
-        const itemElement = document.querySelector(
-          `.items-row .item:nth-child(${index + 1})`,
-        ) as HTMLElement
-        if (itemElement) {
-          itemPositions.set(item, itemElement.offsetLeft)
-        }
-      })
-
-      // Calculate positions proportionally based on actual item positions
-      return items.value.map((item) => {
-        let left: number
-        const itemLeft = itemPositions.get(item)
-
-        if (itemLeft !== undefined) {
-          // Position based on actual element position
-          left = (itemLeft / recycleScroller.value!.scrollWidth) * availableWidth + leftMargin
-        } else {
-          // Fallback to year-based positioning
-          const year = Number(item.year_ce)
-          left = leftMargin + ((year - minYear) / span) * availableWidth - 5
-        }
-
-        // Create a pseudo-random row assignment that depends on the item
-        // This ensures consistent positions between renders but breaks the ladder pattern
-        const itemHash = item.english_heading.length + (Number(item.year_ce) % 100)
-        const rowIndex = itemHash % totalRows
-
-        // Add a small horizontal offset based on hash to stagger items further
-        const horizontalOffset = (itemHash % 7) - 3 // Range from -3 to 3 pixels
-
-        const rowHeight = 4
-        const top = 35 + rowIndex * rowHeight
-
-        // Add a small vertical jitter to break perfect horizontal alignment
-        const verticalJitter = (itemHash % 5) - 2 // Range from -2 to 2 pixels
-
-        const color = colorPalette[categories.value.indexOf(item.category) % colorPalette.length]
-
+      if (!items.value.length) return []
+      return items.value.map((item, index) => {
+        // Each item's left on the minimap.
+        const left = ((index * itemWidth) / totalContentWidth.value) * minimapWidth.value
+        const rowIndex = index % totalRows
+        const top = 35 + rowIndex * 4
+        const catIndex = categories.value.indexOf(item.category)
+        const color = colorPalette[catIndex % colorPalette.length]
         return {
-          left: left + horizontalOffset,
-          top: top + verticalJitter,
+          left,
+          top,
           color,
           title: item.english_heading,
           category: item.category,
@@ -386,37 +268,36 @@ export default defineComponent({
       })
     })
 
-    // Handle clicks on the minimap.
+    // When clicking on the minimap (outside the indicator), scroll so that the clicked point is centered.
     const onMinimapClick = (e: MouseEvent) => {
+      if (isIndicatorDragging.value) return
       if (!recycleScroller.value || !minimap.value) return
-      const minimapElement = minimap.value
-      const minimapRect = minimapElement.getBoundingClientRect()
+      const leftMargin = 20,
+        rightMargin = 20
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
+      const minimapRect = minimap.value.getBoundingClientRect()
       const clickX = e.clientX - minimapRect.left
-      const minimapWidth = minimapElement.clientWidth
-      const ratio = clickX / minimapWidth
-      const container = recycleScroller.value
-      const totalScrollWidth = container.scrollWidth
-      const containerWidth = container.clientWidth
-      const newScrollLeft = ratio * totalScrollWidth - containerWidth / 2
-      container.scrollTo({ left: newScrollLeft, behavior: 'smooth' })
+      const adjustedClickX = Math.max(0, Math.min(clickX - leftMargin, availableWidth))
+      const targetScroll =
+        (adjustedClickX / availableWidth) * totalContentWidth.value -
+        recycleScroller.value.clientWidth / 2
+      const clampedScroll = Math.max(
+        0,
+        Math.min(targetScroll, totalContentWidth.value - recycleScroller.value.clientWidth),
+      )
+      recycleScroller.value.scrollTo({ left: clampedScroll, behavior: 'smooth' })
     }
 
-    // Dragging for the minimap indicator.
-    // const minimapDragStartX = 0
-    // const indicatorInitialLeft = 0
-
-    // Define a variable to store the offset between the click point and the indicator’s left edge.
-    let dragOffset = 0
+    // Dragging the indicator.
+    let initialDragX = 0
+    let initialIndicatorLeft = 0
 
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
-
-      // Get the bounding rectangle of the indicator element.
-      const indicatorRect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      // Calculate how far inside the indicator the user clicked.
-      dragOffset = e.pageX - indicatorRect.left
-
+      // Capture the initial mouse position and current indicator left (which is relative to the available area)
+      initialDragX = e.clientX
+      initialIndicatorLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
       document.addEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.addEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.add('no-select')
@@ -425,21 +306,15 @@ export default defineComponent({
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
       if (!isIndicatorDragging.value || !minimap.value || !recycleScroller.value) return
       e.preventDefault()
-
-      // Get the minimap's bounding rect to compute relative positions.
-      const minimapRect = minimap.value.getBoundingClientRect()
-      const minimapWidth = minimap.value.clientWidth
-      const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width) || 0
-
-      // Calculate the new left position so that the cursor’s position within the indicator is preserved.
-      let newLeft = e.pageX - minimapRect.left - dragOffset
-      newLeft = Math.max(0, Math.min(newLeft, minimapWidth - indicatorWidth))
-
+      const leftMargin = 20,
+        rightMargin = 20
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
+      // Calculate new indicator position based on the initial positions and mouse movement.
+      let newLeft = initialIndicatorLeft + (e.clientX - initialDragX)
+      newLeft = Math.max(0, Math.min(newLeft, availableWidth))
       minimapIndicatorStyle.value.left = newLeft + 'px'
-
-      // Update the scrolling position immediately.
-      const totalScrollWidth = recycleScroller.value.scrollWidth
-      const newScrollLeft = (newLeft / minimapWidth) * totalScrollWidth
+      // Set scroll position without any extra offset.
+      const newScrollLeft = (newLeft / availableWidth) * totalContentWidth.value
       recycleScroller.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
 
@@ -448,16 +323,10 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      // Remove the extra scrollTo logic so that the indicator stays where the cursor is released.
     }
 
     onMounted(async () => {
       items.value = await getItems()
-
-      // if (scrollContainer.value) {
-      //   scrollContainer.value.addEventListener('wheel', handleWheel, { passive: false })
-      //   scrollContainer.value.addEventListener('scroll', updateTransforms)
-      // }
       nextTick(() => {
         recycleScroller.value = document.querySelector('.vue-recycle-scroller') as HTMLElement
         if (recycleScroller.value) {
@@ -465,42 +334,27 @@ export default defineComponent({
           recycleScroller.value.addEventListener('scroll', updateTransforms)
         }
       })
-
       document.addEventListener('mousedown', onMouseDown)
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
-
+      window.addEventListener('resize', updateMinimapWidth)
       nextTick(() => {
         updateMinimapWidth()
         const itemElements = Array.from(document.querySelectorAll('.item')) as HTMLElement[]
         itemElements.forEach((el) => el.classList.add('no-transition'))
-
-        // Initial delay to ensure DOM is fully rendered before positioning calculations
         setTimeout(() => {
           updateTransforms()
           itemElements.forEach((el) => el.classList.remove('no-transition'))
         }, 50)
-
-        window.addEventListener('resize', () => {
-          updateMinimapWidth()
-          updateTransforms()
-        })
-
-        // Manually query for the scroller element.
-        recycleScroller.value = document.querySelector('.vue-recycle-scroller') as HTMLElement
-        console.log('RecycleScroller DOM element:', recycleScroller.value)
       })
     })
-
     onUnmounted(() => {
-      if (scrollContainer.value) {
-        scrollContainer.value.removeEventListener('wheel', handleWheel)
-        scrollContainer.value.removeEventListener('scroll', updateTransforms)
-      }
+      recycleScroller.value?.removeEventListener('wheel', handleWheel)
+      recycleScroller.value?.removeEventListener('scroll', updateTransforms)
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
-      window.removeEventListener('resize', updateTransforms)
+      window.removeEventListener('resize', updateMinimapWidth)
     })
 
     return {
@@ -517,31 +371,27 @@ export default defineComponent({
       categoryFilter,
       categories,
       allChecked,
+      itemWidth,
     }
   },
 })
 </script>
 
 <style scoped>
-/* Disable all text selection in this component */
 * {
   user-select: none !important;
 }
-
-/* Main container */
 .main {
   position: relative;
   height: 100vh;
   overflow: hidden;
 }
-
-/* Scroll container */
 .scroll-container {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  bottom: 120px; /* Adjusted to accommodate minimap and category filters */
+  bottom: 120px; /* Space for minimap and filters */
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -553,17 +403,13 @@ export default defineComponent({
   background-position: center;
   cursor: default;
 }
-
 .scroll-container.dragging {
   scroll-behavior: auto;
   cursor: move;
 }
-
 .scroll-container::-webkit-scrollbar {
   display: none;
 }
-
-/* Bottom-content container */
 .bottom-content {
   display: flex;
   flex-direction: column;
@@ -571,75 +417,34 @@ export default defineComponent({
   height: 100%;
   padding-bottom: 10px;
 }
-
-/* Items Row */
 .items-row {
   display: flex;
   flex-direction: row;
 }
-
-/* Item styling */
 .item {
   width: 200px;
   height: 300px;
   border: 1px solid var(--color-border);
-  /* margin-right: 10px; */
-  /* padding: 10px; */
   box-sizing: border-box;
   background-color: var(--color-background);
   color: var(--color-text);
   flex-shrink: 0;
-  /* transform: translate(150%, -150%);
-  transition: transform 0.5s ease-out; */
 }
-
 .item.no-transition {
   transition: none;
 }
-
 .item h3 {
   color: var(--color-heading);
   margin-bottom: 5px;
 }
-
-/* Hide items but preserve layout */
 .hidden-item {
   visibility: hidden;
 }
-
 .scroller {
-  height: 400px; /* Adjusted to match the item height */
+  height: 400px;
   width: 100%;
   outline: 1px solid red;
 }
-
-/* Timeline Row */
-/* .timeline-row {
-  width: max-content;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  height: 30px;
-  background-color: var(--color-background-soft);
-  border-top: 1px solid var(--color-border);
-} */
-
-.timeline-item {
-  /* padding: 0 10px; */
-  /* margin-right: 10px; */
-  text-align: center;
-  line-height: 50px;
-  flex-shrink: 0;
-  color: var(--color-text);
-  background: red;
-}
-
-.timeline-spacer {
-  width: 400px;
-  flex-shrink: 0;
-}
-
-/* Minimap container for horizontal scrolling */
 .minimap-container {
   position: fixed;
   bottom: 40px;
@@ -653,20 +458,15 @@ export default defineComponent({
   border-top: 1px solid var(--color-border);
   scrollbar-width: none;
 }
-
 .minimap-container::-webkit-scrollbar {
   display: none;
 }
-
-/* Fixed minimap */
 .minimap {
   height: 90px;
   background-color: var(--color-background-soft);
   cursor: pointer;
   position: relative;
 }
-
-/* Timescale on top of minimap */
 .minimap-timescale {
   position: absolute;
   top: 0;
@@ -675,38 +475,29 @@ export default defineComponent({
   height: 20px;
   pointer-events: none;
 }
-
-/* Tick styling */
 .tick {
   position: absolute;
   top: 0;
 }
-
 .tick .tick-mark {
   background-color: var(--color-heading);
   width: 1px;
 }
-
 .tick.major .tick-mark {
   height: 10px;
 }
-
 .tick.medium .tick-mark {
   height: 7px;
 }
-
 .tick.minor .tick-mark {
   height: 4px;
 }
-
 .tick-label {
   font-size: 10px;
   color: var(--color-text);
   margin-top: 2px;
   white-space: nowrap;
 }
-
-/* Minimap items container */
 .minimap-items {
   position: absolute;
   top: 20px;
@@ -715,24 +506,17 @@ export default defineComponent({
   height: 70px;
   pointer-events: none;
 }
-
-/* Each colored rectangle in the minimap */
 .minimap-rectangle {
   position: absolute;
   width: 8px;
   height: 3px;
 }
-
-/* Draggable indicator */
-/* Updated minimap indicator styling */
 .minimap-indicator {
   position: absolute;
   height: 100%;
   box-sizing: border-box;
   background-color: rgba(255, 255, 255, 0.1);
 }
-
-/* Crosshair plus sign in the center */
 .minimap-indicator .crosshair-lines {
   position: absolute;
   left: 50%;
@@ -742,15 +526,12 @@ export default defineComponent({
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
-
 .minimap-indicator .crosshair-lines::before,
 .minimap-indicator .crosshair-lines::after {
   content: '';
   position: absolute;
   background-color: white;
 }
-
-/* Vertical line */
 .minimap-indicator .crosshair-lines::before {
   width: 1px;
   height: 100%;
@@ -758,8 +539,6 @@ export default defineComponent({
   top: 0;
   transform: translateX(-50%);
 }
-
-/* Horizontal line */
 .minimap-indicator .crosshair-lines::after {
   height: 1px;
   width: 100%;
@@ -767,54 +546,41 @@ export default defineComponent({
   left: 0;
   transform: translateY(-50%);
 }
-
-/* Corner markers: small squares with borders only on the outer edges */
 .minimap-indicator .corner {
   position: absolute;
-  width: 10px; /* Adjust the size as needed */
+  width: 10px;
   height: 10px;
   border: 2px solid white;
   pointer-events: none;
 }
-
-/* Top-left corner: show top and left borders only */
 .minimap-indicator .corner.top-left {
   top: 0;
   left: 0;
   border-right: none;
   border-bottom: none;
 }
-
-/* Top-right corner: show top and right borders only */
 .minimap-indicator .corner.top-right {
   top: 0;
   right: 0;
   border-left: none;
   border-bottom: none;
 }
-
-/* Bottom-left corner: show bottom and left borders only */
 .minimap-indicator .corner.bottom-left {
   bottom: 0;
   left: 0;
   border-right: none;
   border-top: none;
 }
-
-/* Bottom-right corner: show bottom and right borders only */
 .minimap-indicator .corner.bottom-right {
   bottom: 0;
   right: 0;
   border-left: none;
   border-top: none;
 }
-
 .minimap-indicator.dragging-indicator {
   cursor: grabbing;
   background-color: rgba(255, 255, 255, 0.3);
 }
-
-/* Category filters row */
 .category-filters {
   position: fixed;
   bottom: 0;
@@ -831,18 +597,14 @@ export default defineComponent({
   box-sizing: border-box;
   z-index: 12;
 }
-
 .category-filter {
   margin-right: 15px;
   display: flex;
   align-items: center;
 }
-
 .category-filter input {
   margin-right: 5px;
 }
-
-/* Fixed arrow */
 .fixed-arrow {
   position: fixed;
   bottom: 160px;
@@ -854,5 +616,10 @@ export default defineComponent({
   border-right: 10px solid transparent;
   border-bottom: 10px solid var(--color-background-soft);
   z-index: 10;
+}
+
+.tick-label {
+  position: relative;
+  left: -50%;
 }
 </style>
