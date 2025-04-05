@@ -45,13 +45,8 @@
     </div>
 
     <!-- Fixed minimap container (always equals viewport width) -->
-    <div class="minimap-container">
-      <div
-        ref="minimap"
-        class="minimap"
-        @click="onMinimapClick"
-        :style="{ width: minimapWidth + 'px' }"
-      >
+    <div class="minimap-container" @click="onMinimapClick">
+      <div ref="minimap" class="minimap" :style="{ width: minimapWidth + 'px' }">
         <!-- Timeline ticks -->
         <div class="minimap-timescale">
           <div
@@ -180,17 +175,16 @@ export default defineComponent({
       updateTransforms()
     }
 
-    // Convert vertical wheel events to horizontal scrolling.
+    // --- Wheel Event Handler ---
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
-      if (recycleScroller.value) {
-        const scrollStep = 8
-        const newScrollLeft = recycleScroller.value.scrollLeft + e.deltaY * scrollStep
-        recycleScroller.value.scrollTo({ left: newScrollLeft, behavior: 'smooth' })
-      }
+      const scroller = e.currentTarget as HTMLElement
+      const scrollStep = 8
+      const newScrollLeft = scroller.scrollLeft + e.deltaY * scrollStep
+      scroller.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
 
-    // Variables for dragging the scroll container.
+    // --- Dragging the Scroll Container ---
     let isDragging = false,
       startX = 0,
       startScrollLeft = 0
@@ -216,7 +210,7 @@ export default defineComponent({
       recycleScroller.value.scrollTo({ left: startScrollLeft - dx, behavior: 'auto' })
     }
 
-    // Update the indicator's size and position.
+    // --- Syncing Scrollers & Updating Minimap ---
     const updateTransforms = () => {
       if (isIndicatorDragging.value || !recycleScroller.value) return
       const container = recycleScroller.value
@@ -245,7 +239,22 @@ export default defineComponent({
       }
     }
 
-    // Timeline ticks.
+    // Unified scroll syncing.
+    let isSyncingScroll = false
+    const onScrollHandler = (e: Event) => {
+      if (isSyncingScroll) return
+      isSyncingScroll = true
+      const target = e.currentTarget as HTMLElement
+      if (target === recycleScroller.value && recycleScroller2.value) {
+        recycleScroller2.value.scrollLeft = recycleScroller.value.scrollLeft
+      } else if (target === recycleScroller2.value && recycleScroller.value) {
+        recycleScroller.value.scrollLeft = recycleScroller2.value.scrollLeft
+      }
+      updateTransforms()
+      isSyncingScroll = false
+    }
+
+    // --- Timeline Ticks & Rectangles ---
     const timelineTicks = computed(() => {
       if (!items.value.length) return []
       const leftMargin = 20,
@@ -273,7 +282,6 @@ export default defineComponent({
       return ticks
     })
 
-    // Minimap rectangles.
     const totalRows = 5
     const colorPalette = [
       '#f44336',
@@ -324,10 +332,9 @@ export default defineComponent({
       return Math.max(0, Math.min(targetScroll, totalContentWidth.value - scrollerWidth))
     }
 
-    // Drag indicator tracking.
+    // --- Minimap Dragging ---
     let indicatorDragStartX = 0
     let indicatorDragged = false
-
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
@@ -337,7 +344,6 @@ export default defineComponent({
       document.addEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.add('no-select')
     }
-
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
       if (!isIndicatorDragging.value || !minimap.value || !recycleScroller.value) return
       e.preventDefault()
@@ -347,11 +353,11 @@ export default defineComponent({
       const leftMargin = 20,
         rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const minimapContainer = minimap.value.parentElement
-      if (!minimapContainer) return
-      const containerRect = minimapContainer.getBoundingClientRect()
+      const containerRect = (
+        document.querySelector('.minimap-container') as HTMLElement
+      ).getBoundingClientRect()
       const indicatorWidth = computeIndicatorWidth()
-      let newCenter = e.clientX - containerRect.left + minimapContainer.scrollLeft - leftMargin
+      let newCenter = e.clientX - containerRect.left - leftMargin
       newCenter = Math.max(
         indicatorWidth / 2,
         Math.min(newCenter, availableWidth - indicatorWidth / 2),
@@ -366,7 +372,6 @@ export default defineComponent({
       const targetScroll = getScrollPositionForYear(targetYear)
       recycleScroller.value.scrollTo({ left: targetScroll, behavior: 'auto' })
     }
-
     const onMinimapIndicatorMouseUp = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
@@ -374,19 +379,20 @@ export default defineComponent({
       document.body.classList.remove('no-select')
     }
 
+    // --- Minimap Click ---
     const onMinimapClick = (e: MouseEvent) => {
       if (indicatorDragged) {
         indicatorDragged = false
         return
       }
-      if (!recycleScroller.value || !minimap.value) return
-      const minimapContainer = minimap.value.parentElement
+      if (!recycleScroller.value) return
+      const minimapContainer = document.querySelector('.minimap-container') as HTMLElement
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
       const leftMargin = 20,
         rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      let newCenter = e.clientX - containerRect.left + minimapContainer.scrollLeft - leftMargin
+      let newCenter = e.clientX - containerRect.left - leftMargin
       const indicatorWidth = computeIndicatorWidth()
       newCenter = Math.max(
         indicatorWidth / 2,
@@ -397,28 +403,25 @@ export default defineComponent({
       const maxYear = Math.max(...years)
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
       const correctedScroll = getScrollPositionForYear(targetYear) - indicatorWidth / 2
-      recycleScroller.value.scrollTo({ left: correctedScroll, behavior: 'smooth' })
-    }
-
-    // Sync scroll of recycleScroller2 with recycleScroller.
-    const syncScroll = () => {
-      if (recycleScroller.value && recycleScroller2.value) {
-        recycleScroller2.value.scrollLeft = recycleScroller.value.scrollLeft
-      }
-      updateTransforms()
+      recycleScroller.value.scrollTo({ left: correctedScroll, behavior: 'auto' })
     }
 
     onMounted(async () => {
       items.value = await getItems()
       nextTick(() => {
-        // Get reference to the primary scroller.
-        recycleScroller.value = document.querySelectorAll('.vue-recycle-scroller')[0] as HTMLElement
-        recycleScroller2.value = document.querySelectorAll(
+        // Get references to both scrollers.
+        const scrollers = document.querySelectorAll(
           '.vue-recycle-scroller',
-        )[1] as HTMLElement
-        if (recycleScroller.value) {
+        ) as NodeListOf<HTMLElement>
+        recycleScroller.value = scrollers[0]
+        recycleScroller2.value = scrollers[1]
+        if (recycleScroller.value && recycleScroller2.value) {
+          // Attach wheel events.
           recycleScroller.value.addEventListener('wheel', handleWheel, { passive: false })
-          recycleScroller.value.addEventListener('scroll', syncScroll)
+          recycleScroller2.value.addEventListener('wheel', handleWheel, { passive: false })
+          // Attach scroll events.
+          recycleScroller.value.addEventListener('scroll', onScrollHandler)
+          recycleScroller2.value.addEventListener('scroll', onScrollHandler)
         }
       })
       document.addEventListener('mousedown', onMouseDown)
@@ -438,7 +441,9 @@ export default defineComponent({
 
     onUnmounted(() => {
       recycleScroller.value?.removeEventListener('wheel', handleWheel)
-      recycleScroller.value?.removeEventListener('scroll', syncScroll)
+      recycleScroller2.value?.removeEventListener('wheel', handleWheel)
+      recycleScroller.value?.removeEventListener('scroll', onScrollHandler)
+      recycleScroller2.value?.removeEventListener('scroll', onScrollHandler)
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
@@ -529,7 +534,7 @@ export default defineComponent({
   visibility: hidden;
 }
 .scroller {
-  height: calc((100vh - 80px) / 2);
+  height: calc((100vh - 79px) / 2);
   width: 100%;
 }
 :deep(.vue-recycle-scroller__item-wrapper) > .item {
