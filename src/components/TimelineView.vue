@@ -402,29 +402,42 @@ export default defineComponent({
     }
 
     // Dragging for the minimap indicator.
-    let minimapDragStartX = 0
-    let indicatorInitialLeft = 0
+    // const minimapDragStartX = 0
+    // const indicatorInitialLeft = 0
+
+    // Define a variable to store the offset between the click point and the indicator’s left edge.
+    let dragOffset = 0
 
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
-      minimapDragStartX = e.pageX
-      indicatorInitialLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
+
+      // Get the bounding rectangle of the indicator element.
+      const indicatorRect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      // Calculate how far inside the indicator the user clicked.
+      dragOffset = e.pageX - indicatorRect.left
+
       document.addEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.addEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.add('no-select')
     }
 
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
-      if (!isIndicatorDragging.value || !recycleScroller.value || !minimap.value) return
+      if (!isIndicatorDragging.value || !minimap.value || !recycleScroller.value) return
       e.preventDefault()
-      const dx = e.pageX - minimapDragStartX
-      const minimapElement = minimap.value
-      const minimapWidth = minimapElement.clientWidth
+
+      // Get the minimap's bounding rect to compute relative positions.
+      const minimapRect = minimap.value.getBoundingClientRect()
+      const minimapWidth = minimap.value.clientWidth
       const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width) || 0
-      let newLeft = indicatorInitialLeft + dx
+
+      // Calculate the new left position so that the cursor’s position within the indicator is preserved.
+      let newLeft = e.pageX - minimapRect.left - dragOffset
       newLeft = Math.max(0, Math.min(newLeft, minimapWidth - indicatorWidth))
+
       minimapIndicatorStyle.value.left = newLeft + 'px'
+
+      // Update the scrolling position immediately.
       const totalScrollWidth = recycleScroller.value.scrollWidth
       const newScrollLeft = (newLeft / minimapWidth) * totalScrollWidth
       recycleScroller.value.scrollTo({ left: newScrollLeft, behavior: 'auto' })
@@ -435,18 +448,7 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      if (recycleScroller.value && minimap.value) {
-        const minimapElement = minimap.value
-        const minimapWidth = minimapElement.clientWidth
-        const totalScrollWidth = recycleScroller.value.scrollWidth
-        const indicatorLeft = parseFloat(minimapIndicatorStyle.value.left) || 0
-        indicatorTargetScrollLeft.value = (indicatorLeft / minimapWidth) * totalScrollWidth
-        freezeIndicator.value = true
-        recycleScroller.value.scrollTo({
-          left: indicatorTargetScrollLeft.value,
-          behavior: 'smooth',
-        })
-      }
+      // Remove the extra scrollTo logic so that the indicator stays where the cursor is released.
     }
 
     onMounted(async () => {
