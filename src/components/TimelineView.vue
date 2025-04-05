@@ -129,6 +129,24 @@ export default defineComponent({
   name: 'HorizontalTimeline',
   components: { RecycleScroller },
   setup() {
+    // --- Debounce helper ---
+    const debounce = (fn: Function, delay: number) => {
+      let timer: ReturnType<typeof setTimeout>
+      return (...args: any[]) => {
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          fn(...args)
+        }, delay)
+      }
+    }
+
+    // Wrap scrollTo in a debounced function.
+    const debouncedScrollTo = debounce((scrollLeft: number) => {
+      if (recycleScroller.value) {
+        recycleScroller.value.scrollTo({ left: scrollLeft, behavior: 'auto' })
+      }
+    }, 100)
+
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
     const recycleScroller = ref<HTMLElement | null>(null)
@@ -189,7 +207,7 @@ export default defineComponent({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
       const scroller = e.currentTarget as HTMLElement
-      const scrollStep = 8
+      const scrollStep = 1
       const newScrollLeft = scroller.scrollLeft + e.deltaY * scrollStep
       scroller.scrollTo({ left: newScrollLeft, behavior: 'auto' })
     }
@@ -330,14 +348,15 @@ export default defineComponent({
     // Helper: Given a target year, find the closest item and return a scrollLeft to center it.
     const getScrollPositionForYear = (targetYear: number): number => {
       if (!items.value.length || !recycleScroller.value) return 0
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
+      const closestIndex = items.value.reduce((prevIndex, currItem, index) => {
+        const currYear = Number(currItem.year_ce)
+        return Math.abs(currYear - targetYear) <
+          Math.abs(Number(items.value[prevIndex].year_ce) - targetYear)
+          ? index
+          : prevIndex
+      }, 0)
       const scrollerWidth = recycleScroller.value.clientWidth
-      // Compute continuous scroll position:
-      const targetScroll =
-        ((targetYear - minYear) / (maxYear - minYear)) * totalContentWidth.value -
-        (scrollerWidth - itemWidth) / 2
+      const targetScroll = closestIndex * itemWidth - (scrollerWidth - itemWidth) / 2
       return Math.max(0, Math.min(targetScroll, totalContentWidth.value - scrollerWidth))
     }
 
@@ -379,7 +398,7 @@ export default defineComponent({
       const maxYear = Math.max(...years)
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
       const targetScroll = getScrollPositionForYear(targetYear)
-      recycleScroller.value.scrollTo({ left: targetScroll, behavior: 'auto' })
+      debouncedScrollTo(targetScroll)
     }
     const onMinimapIndicatorMouseUp = () => {
       isIndicatorDragging.value = false
@@ -410,9 +429,8 @@ export default defineComponent({
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
-
-      const correctedScroll = getScrollPositionForYear(targetYear)
-      recycleScroller.value.scrollTo({ left: correctedScroll, behavior: 'auto' })
+      const correctedScroll = getScrollPositionForYear(targetYear) - indicatorWidth / 2
+      debouncedScrollTo(correctedScroll)
     }
 
     onMounted(async () => {
