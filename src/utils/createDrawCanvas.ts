@@ -1,4 +1,10 @@
-// In your createDrawCanvas.ts file:
+// src/utils/createDrawCanvas.ts
+import type { Ref } from 'vue'
+import type { Item } from '@/services/dataService'
+
+// Global Map to track fade progress for each item by its id.
+const fadeProgress = new Map<string, number>()
+
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
@@ -45,8 +51,8 @@ export function createDrawCanvas(
     // Clear the canvas
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
 
-    // Calculate scale factor for fonts
-    const scale = getScaleFactor()
+    // Calculate scale factor for fonts based on screen width.
+    const globalScale = getScaleFactor()
 
     // Define rows (two tracks) and margins
     const rowHeight = canvasHeight.value / 2
@@ -64,71 +70,115 @@ export function createDrawCanvas(
     items.value.forEach((item, index) => {
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) {
+        // Remove fade progress if the item is offscreen.
+        fadeProgress.delete(item.id)
         return
       }
 
-      // Fade-in and transformation effects...
-      // (Omitted for brevity, your original logic remains)
+      // ------------------------
+      // Fade‑in and transformation effects
+      // ------------------------
+      let progress = fadeProgress.get(item.id) ?? 0
+      progress = Math.min(1, progress + 0.01)
+      fadeProgress.set(item.id, progress)
 
-      // For the first track (non-world items)
+      // Use the fade progress for the opacity
+      const alpha = progress
+      // Compute fade-specific transformation values:
+      // Scale grows from 0.5 (50%) to 1 (100%)
+      const fadeScale = 0.5 + progress * 0.5
+      // Horizontal offset: starts 20px to the right and moves to 0.
+      const offsetX = (1 - progress) * 20
+      // Vertical offset: starts 30px above and falls to 0.
+      const offsetY = (1 - progress) * -30
+
+      // ------------------------
+      // First Track: Items that are NOT world items.
+      // ------------------------
       if (item.type !== 'world' && categoryFilter.value[item.category]) {
         ctx.save()
         ctx.translate(x, 0)
-        // ... Apply transformation effects as needed
+        ctx.globalAlpha = alpha
+        // Apply fade-in transformation:
+        ctx.translate(effectiveItemWidth, 0)
+        ctx.scale(fadeScale, fadeScale)
+        ctx.translate(-effectiveItemWidth, 0)
+        ctx.translate(offsetX, offsetY)
 
         // Draw background rectangle
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
         ctx.fillRect(0, itemY_local, effectiveItemWidth - 10, itemHeight)
-        // Draw top border
-        // (Border drawing code remains unchanged)
+        // Draw top border (if needed, add code here)
 
-        // Set font sizes based on the scale factor.
+        // Draw text with font sizes scaled by the global scale factor.
         ctx.fillStyle = '#000'
-        // Use a base font size (e.g., 18px) multiplied by the scaling factor.
-        ctx.font = `bold ${14 * scale}px sans-serif`
+        ctx.font = `bold ${14 * globalScale}px sans-serif`
         const titleEndY = wrapText(
           ctx,
           item.tamil_heading,
           5,
           itemY_local + 30,
           effectiveItemWidth - 20,
-          20 * scale,
+          20 * globalScale,
         )
-        ctx.font = `${14 * scale}px sans-serif`
+        ctx.font = `${14 * globalScale}px sans-serif`
         const tamilDescription =
           item.tamil_long_text.length > 47
             ? item.tamil_long_text.slice(0, 47) + '...'
             : item.tamil_long_text
-        wrapText(ctx, tamilDescription, 5, titleEndY + 30, effectiveItemWidth - 20, 20 * scale)
+        wrapText(
+          ctx,
+          tamilDescription,
+          5,
+          titleEndY + 30,
+          effectiveItemWidth - 20,
+          20 * globalScale,
+        )
         ctx.restore()
       }
 
-      // For the second track (non-tamil items)
+      // ------------------------
+      // Second Track: Items that are NOT tamil items.
+      // ------------------------
       if (item.type !== 'tamil' && categoryFilter.value[item.category]) {
         ctx.save()
         ctx.translate(x, 0)
-        // ... Apply transformation effects as needed
+        ctx.globalAlpha = alpha
+        // Apply fade-in transformation:
+        ctx.translate(effectiveItemWidth, 0)
+        ctx.scale(fadeScale, fadeScale)
+        ctx.translate(-effectiveItemWidth, 0)
+        ctx.translate(offsetX, offsetY)
 
+        // Translate into second track’s coordinate system.
         ctx.translate(0, rowHeight)
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
         ctx.fillRect(0, itemY_local, effectiveItemWidth - 10, itemHeight)
-        // Draw top border, etc.
+        // Draw top border (if needed)
+
         ctx.fillStyle = '#000'
-        ctx.font = `bold ${14 * scale}px sans-serif`
+        ctx.font = `bold ${14 * globalScale}px sans-serif`
         const titleEndY = wrapText(
           ctx,
           item.english_heading,
           5,
           itemY_local + 30,
           effectiveItemWidth - 20,
-          20 * scale,
+          20 * globalScale,
         )
-        ctx.font = `${14 * scale}px sans-serif`
+        ctx.font = `${14 * globalScale}px sans-serif`
         const englishDescription =
           item.english_long_text.length > 47
             ? item.english_long_text.slice(0, 47) + '...'
             : item.english_long_text
-        wrapText(ctx, englishDescription, 5, titleEndY + 30, effectiveItemWidth - 20, 20 * scale)
+        wrapText(
+          ctx,
+          englishDescription,
+          5,
+          titleEndY + 30,
+          effectiveItemWidth - 20,
+          20 * globalScale,
+        )
         ctx.restore()
       }
     })
@@ -145,8 +195,7 @@ export function createDrawCanvas(
     ctx.fillRect(0, laneY_local, canvasWidth.value, yearLaneHeight)
     ctx.restore()
 
-    // Phase 3 and Phase 4: Draw Year Labels and Arrow Indicators (similar logic)
-    // When drawing text labels for years, also multiply font sizes by scale
+    // Phase 3: Draw Year Labels
     items.value.forEach((item, index) => {
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
@@ -155,7 +204,7 @@ export function createDrawCanvas(
       ctx.save()
       ctx.translate(x, 0)
       ctx.fillStyle = '#000'
-      ctx.font = `${14 * scale}px sans-serif`
+      ctx.font = `${14 * globalScale}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(item.year_ta, (effectiveItemWidth - 10) / 2, laneY_local + yearLaneHeight / 2)
@@ -170,7 +219,7 @@ export function createDrawCanvas(
       ctx.save()
       ctx.translate(x, 0)
       ctx.fillStyle = '#000'
-      ctx.font = `${14 * scale}px sans-serif`
+      ctx.font = `${14 * globalScale}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(
@@ -181,10 +230,7 @@ export function createDrawCanvas(
       ctx.restore()
     })
 
-    // ------------------------
     // Phase 4: Draw Arrow Indicators for Year Lanes
-    // ------------------------
-    // Define arrow properties:
     const centerX = canvasWidth.value / 2
     const arrowWidth = 20
     const arrowHeight = 10

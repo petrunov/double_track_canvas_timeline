@@ -331,7 +331,7 @@ export default defineComponent({
     }
 
     onMounted(async () => {
-      items.value = await getItems(300)
+      items.value = await getItems(3000)
       await nextTick()
       updateDimensions()
       drawCanvas()
