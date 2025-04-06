@@ -29,6 +29,8 @@
             :style="{
               left: rect.left + 'px',
               top: rect.top + 'px',
+              width: rect.width + 'px',
+              height: rect.height + 'px',
               backgroundColor: rect.color,
               visibility: categoryFilter[rect.category] ? 'visible' : 'hidden',
             }"
@@ -167,7 +169,7 @@ export default defineComponent({
     const updateDimensions = () => {
       canvasWidth.value = window.innerWidth
       canvasHeight.value = window.innerHeight - 80
-      minimapWidth.value = window.innerWidth
+      minimapWidth.value = window.innerWidth * 1.3
       if (scrollCanvas.value) {
         scrollCanvas.value.width = canvasWidth.value
         scrollCanvas.value.height = canvasHeight.value
@@ -329,7 +331,7 @@ export default defineComponent({
     }
 
     onMounted(async () => {
-      items.value = await getItems(3000)
+      items.value = await getItems(300)
       await nextTick()
       updateDimensions()
       drawCanvas()
@@ -381,7 +383,6 @@ export default defineComponent({
       return ticks
     })
 
-    const totalRows = 5
     const colorPalette = [
       '#f44336',
       '#e91e63',
@@ -393,22 +394,44 @@ export default defineComponent({
     ]
     const minimapRectangles = computed(() => {
       if (!items.value.length) return []
-      const leftMargin = 20,
-        rightMargin = 20
+
+      // Define horizontal margins and available width in the minimap
+      const leftMargin = 20
+      const rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
-      const span = maxYear - minYear || 1
-      return items.value.map((item) => {
-        const left = leftMargin + ((Number(item.year_ce) - minYear) / span) * availableWidth - 5
-        const rowIndex = items.value.indexOf(item) % totalRows
-        const top = 35 + rowIndex * 4
+
+      // Use the same effective item width as in the canvas drawing logic
+      const effectiveItemWidth = itemWidth + 2
+      const totalContentWidthEffective = items.value.length * effectiveItemWidth
+
+      // Scale factor to map timeline width to minimap width
+      const scaleFactor = availableWidth / totalContentWidthEffective
+
+      // Define vertical positioning relative to the timescale.
+      const timescaleHeight = 20 // height of your timescale element
+      const firstTrackTop = timescaleHeight + 15 // e.g., 25px from top
+      const secondTrackTop = firstTrackTop + 5 // e.g., 30px from top
+
+      return items.value.map((item, index) => {
+        // Calculate horizontal position and width
+        const x = index * effectiveItemWidth
+        const left = leftMargin + x * scaleFactor
+        const rectWidth = effectiveItemWidth * scaleFactor
+
+        // Set the vertical position: first row for non-'world' items,
+        // second row for 'world' items.
+        const top = item.type === 'world' ? secondTrackTop : firstTrackTop
+        const rectHeight = 4
+
+        // Use your color palette to assign a color based on category.
         const catIndex = categories.value.indexOf(item.category)
         const color = colorPalette[catIndex % colorPalette.length]
+
         return {
           left,
           top,
+          width: rectWidth,
+          height: rectHeight,
           color,
           title: item.english_heading,
           category: item.category,
@@ -525,8 +548,6 @@ export default defineComponent({
 }
 .minimap-rectangle {
   position: absolute;
-  width: 10px;
-  height: 2px;
 }
 .minimap-indicator {
   position: absolute;
