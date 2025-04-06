@@ -752,8 +752,10 @@ export default defineComponent({
   background-color: rgba(255, 255, 255, 0.8);
   padding: 10px;
   cursor: pointer;
-  height: 96%;
-  padding-top: 90%;
+  height: 350px;
+  position: fixed;
+  top: auto;
+  bottom: 30px;
 }
 .year-timeline {
   background-color: var(--color-background);
