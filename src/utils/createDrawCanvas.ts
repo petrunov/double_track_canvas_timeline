@@ -40,7 +40,7 @@ export function createDrawCanvas(
     // Items are half of the effective content height
     const itemHeight = trackContentHeight / 2
 
-    const yearLaneHeight = 204
+    const yearLaneHeight = 24
 
     // Compute local coordinates (for each track):
     // Local Y position for the lane (drawn at the bottom of the content area)
