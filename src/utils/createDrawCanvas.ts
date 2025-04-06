@@ -181,8 +181,39 @@ export function createDrawCanvas(
       ctx.restore()
     })
 
-    // Arrow indicators drawing (unchanged)
+    // ------------------------
+    // Phase 4: Draw Arrow Indicators for Year Lanes
+    // ------------------------
+    // Define arrow properties:
+    const centerX = canvasWidth.value / 2
+    const arrowWidth = 20
+    const arrowHeight = 10
 
+    // First Track Arrow:
+    ctx.save()
+    ctx.fillStyle = 'white'
+    ctx.beginPath()
+    const arrowCenterY1 = laneY_local + yearLaneHeight / 2 - 14
+    ctx.moveTo(centerX, arrowCenterY1 - arrowHeight / 2)
+    ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
+    ctx.lineTo(centerX + arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+
+    // Second Track Arrow:
+    ctx.save()
+    ctx.fillStyle = 'white'
+    ctx.beginPath()
+    const arrowCenterY2 = rowHeight + laneY_local + yearLaneHeight / 2 - 14
+    ctx.moveTo(centerX, arrowCenterY2 - arrowHeight / 2)
+    ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY2 + arrowHeight / 2)
+    ctx.lineTo(centerX + arrowWidth / 2, arrowCenterY2 + arrowHeight / 2)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+
+    // Request the next animation frame
     animationFrameId = requestAnimationFrame(drawCanvas)
   }
 
