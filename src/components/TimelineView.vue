@@ -47,7 +47,7 @@
                 <h3>{{ item.english_heading }}</h3>
                 <p>{{ item.english_long_text }}</p>
               </div>
-              <p class="year-timeline">{{ item.year_ce }}</p>
+              <p class="year-timeline">{{ item.year_ce }} C.E.</p>
             </div>
           </RecycleScroller>
         </div>
@@ -549,6 +549,7 @@ export default defineComponent({
   justify-content: flex-end;
   height: 100%;
   padding-bottom: 10px;
+  background-color: rgba(255, 255, 255, 0.4);
 }
 .items-row {
   display: flex;
@@ -558,8 +559,7 @@ export default defineComponent({
   width: 200px;
   height: calc((100vh - 80px) / 2);
   box-sizing: border-box;
-  /* background-color: var(--color-background); */
-  background-color: transparent;
+  background-color: rgba(255, 255, 255, 0.4);
   color: var(--color-text);
   flex-shrink: 0;
 }

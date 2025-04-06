@@ -44,7 +44,7 @@ export function getItems(len: number): Promise<Item[]> {
   for (let i = 0; i < len; i++) {
     const id = i + 1 // Unique ID for each item.
     // Randomly generate a year_ce between -5000 (5000 BCE) and 2100 (2100 AD).
-    const year_ce = Math.floor(Math.random() * (2100 - -5000 + 1)) + -5000
+    const year_ce = Math.floor(Math.random() * (2100 - -3000 + 1)) + -3000
     // Convert the CE year to the Tamil Vikram year.
     const year_ta = convertToTamilVikramEra(year_ce)
 
