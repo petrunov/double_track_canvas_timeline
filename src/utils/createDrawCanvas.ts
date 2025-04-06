@@ -71,16 +71,16 @@ export function createDrawCanvas(
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) {
         // Remove fade progress if the item is offscreen.
-        fadeProgress.delete(item.id)
+        fadeProgress.delete(String(item.id))
         return
       }
 
       // ------------------------
       // Fade‑in and transformation effects
       // ------------------------
-      let progress = fadeProgress.get(item.id) ?? 0
+      let progress = fadeProgress.get(String(item.id)) ?? 0
       progress = Math.min(1, progress + 0.01)
-      fadeProgress.set(item.id, progress)
+      fadeProgress.set(String(item.id), progress)
 
       // Use the fade progress for the opacity
       const alpha = progress
@@ -195,7 +195,7 @@ export function createDrawCanvas(
     ctx.fillRect(0, laneY_local, canvasWidth.value, yearLaneHeight)
     ctx.restore()
 
-    // Phase 3: Draw Year Labels
+    // Phase 3: Draw Year Labels for first track
     items.value.forEach((item, index) => {
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
@@ -207,10 +207,15 @@ export function createDrawCanvas(
       ctx.font = `${14 * globalScale}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(item.year_ta, (effectiveItemWidth - 10) / 2, laneY_local + yearLaneHeight / 2)
+      ctx.fillText(
+        String(item.year_ta),
+        (effectiveItemWidth - 10) / 2,
+        laneY_local + yearLaneHeight / 2,
+      )
       ctx.restore()
     })
 
+    // Phase 3: Draw Year Labels for second track
     items.value.forEach((item, index) => {
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
@@ -223,7 +228,7 @@ export function createDrawCanvas(
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(
-        item.year_ce + ' C.E.',
+        `${item.year_ce} C.E.`,
         (effectiveItemWidth - 10) / 2,
         rowHeight + laneY_local + yearLaneHeight / 2,
       )
