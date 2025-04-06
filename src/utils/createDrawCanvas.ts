@@ -2,6 +2,9 @@
 import type { Ref } from 'vue'
 import type { Item } from '@/services/dataService'
 
+// Global Map to track fade progress for each item by its id.
+const fadeProgress = new Map<string, number>()
+
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
@@ -31,35 +34,46 @@ export function createDrawCanvas(
 
     // Define rows (two tracks)
     const rowHeight = canvasHeight.value / 2
-    // Top margin relative to canvas height (e.g., 5%)
+    // Top margin (relative to canvas height, e.g., 5%)
     const marginFactor = 0.05
     const trackTopMargin = canvasHeight.value * marginFactor
     const bottomMargin = 10
     // Effective content height for each track
     const trackContentHeight = rowHeight - trackTopMargin - bottomMargin
-    // Items are half of the effective content height
+    // Items take half the effective content height
     const itemHeight = trackContentHeight / 2
+    // Year lane height (20px)
+    const yearLaneHeight = 20
 
-    const yearLaneHeight = 24
-
-    // Compute local coordinates (for each track):
-    // Local Y position for the lane (drawn at the bottom of the content area)
+    // Compute local coordinates for each track:
+    // Local Y position for the lane (at bottom of content)
     const laneY_local = trackTopMargin + trackContentHeight - yearLaneHeight
-    // Local Y position for the item so that its bottom is 20px above the lane
+    // Local Y position for the item so its bottom is 20px above the lane
     const itemY_local = laneY_local - 20 - itemHeight
 
     // ------------------------
-    // Phase 1: Draw the Items
+    // Phase 1: Draw the Items (with fade‑in)
     // ------------------------
     items.value.forEach((item, index) => {
       // Calculate x-position relative to virtual scroll
       const x = index * itemWidth - scrollX.value
-      if (x + itemWidth < 0 || x > canvasWidth.value) return
+      if (x + itemWidth < 0 || x > canvasWidth.value) {
+        // If item is offscreen, remove its fade progress
+        fadeProgress.delete(item.id)
+        return
+      }
+
+      // Get current fade opacity or initialize to 0.
+      let alpha = fadeProgress.get(item.id) ?? 0
+      // Increment opacity by a small value, ensuring it doesn't exceed 1.
+      alpha = Math.min(1, alpha + 0.01)
+      fadeProgress.set(item.id, alpha)
 
       ctx.save()
       ctx.translate(x, 0)
+      ctx.globalAlpha = alpha
 
-      // First Track: Show only items that are not world items.
+      // First Track: Show only items that are NOT world items.
       const drawFirstTrack = item.type !== 'world' && categoryFilter.value[item.category]
       if (drawFirstTrack) {
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
@@ -71,7 +85,7 @@ export function createDrawCanvas(
         wrapText(ctx, item.tamil_long_text, 5, titleEndY + 10, itemWidth - 20, 16)
       }
 
-      // Second Track: Show only items that are not tamil items (i.e. world items).
+      // Second Track: Show only items that are NOT tamil items.
       const drawSecondTrack = item.type !== 'tamil' && categoryFilter.value[item.category]
       if (drawSecondTrack) {
         // Translate into second track's local coordinate system.
@@ -97,13 +111,13 @@ export function createDrawCanvas(
     // ------------------------
     // Phase 2: Draw the Year Lanes
     // ------------------------
-    // First track year lane using local coordinate:
+    // First track year lane (using local coordinate)
     ctx.save()
     ctx.fillStyle = 'white'
     ctx.fillRect(0, laneY_local, canvasWidth.value, yearLaneHeight)
     ctx.restore()
 
-    // Second track: translate by rowHeight and draw the same lane.
+    // Second track year lane (translate by rowHeight)
     ctx.save()
     ctx.translate(0, rowHeight)
     ctx.fillStyle = 'white'
@@ -140,7 +154,6 @@ export function createDrawCanvas(
       ctx.font = 'bold 16px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      // For second track, add rowHeight to the lane position
       ctx.fillText(
         item.year_ce + ' C.E.',
         (itemWidth - 10) / 2,
@@ -148,6 +161,40 @@ export function createDrawCanvas(
       )
       ctx.restore()
     })
+
+    // ------------------------
+    // Phase 4: Draw Arrow Indicators for Year Lanes
+    // ------------------------
+    // Define arrow properties:
+    const centerX = canvasWidth.value / 2
+    const arrowWidth = 20
+    const arrowHeight = 10
+
+    // First Track Arrow:
+    ctx.save()
+    ctx.fillStyle = 'white'
+    ctx.beginPath()
+    // Place the arrow centered vertically in the first lane;
+    // Adjust Y position as desired (here 14px above lane center)
+    const arrowCenterY1 = laneY_local + yearLaneHeight / 2 - 14
+    ctx.moveTo(centerX, arrowCenterY1 - arrowHeight / 2)
+    ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
+    ctx.lineTo(centerX + arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+
+    // Second Track Arrow:
+    ctx.save()
+    ctx.fillStyle = 'white'
+    ctx.beginPath()
+    const arrowCenterY2 = rowHeight + laneY_local + yearLaneHeight / 2 - 14
+    ctx.moveTo(centerX, arrowCenterY2 - arrowHeight / 2)
+    ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY2 + arrowHeight / 2)
+    ctx.lineTo(centerX + arrowWidth / 2, arrowCenterY2 + arrowHeight / 2)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
 
     // Request the next animation frame
     animationFrameId = requestAnimationFrame(drawCanvas)

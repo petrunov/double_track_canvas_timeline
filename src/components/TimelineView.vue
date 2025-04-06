@@ -63,9 +63,6 @@
         <label :for="`cat-${category}`">{{ category }}</label>
       </div>
     </div>
-
-    <!-- Fixed arrow element -->
-    <div class="fixed-arrow"></div>
   </div>
 </template>
 
@@ -624,17 +621,5 @@ export default defineComponent({
 }
 .category-filter input {
   margin-right: 5px;
-}
-.fixed-arrow {
-  position: fixed;
-  bottom: 114px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-bottom: 10px solid var(--color-background);
-  z-index: 10;
 }
 </style>
