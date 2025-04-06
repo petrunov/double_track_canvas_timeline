@@ -169,7 +169,7 @@ export default defineComponent({
     const updateDimensions = () => {
       canvasWidth.value = window.innerWidth
       canvasHeight.value = window.innerHeight - 80
-      minimapWidth.value = window.innerWidth * 1.3
+      minimapWidth.value = window.innerWidth
       if (scrollCanvas.value) {
         scrollCanvas.value.width = canvasWidth.value
         scrollCanvas.value.height = canvasHeight.value
