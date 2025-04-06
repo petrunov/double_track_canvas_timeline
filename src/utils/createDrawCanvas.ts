@@ -52,7 +52,7 @@ export function createDrawCanvas(
     const itemY_local = laneY_local - 20 - itemHeight
 
     // ------------------------
-    // Phase 1: Draw the Items (with fade‑in)
+    // Phase 1: Draw the Items (with fade‑in and scale/fall effect)
     // ------------------------
     items.value.forEach((item, index) => {
       // Calculate x-position relative to virtual scroll
@@ -63,19 +63,39 @@ export function createDrawCanvas(
         return
       }
 
-      // Get current fade opacity or initialize to 0.
-      let alpha = fadeProgress.get(item.id) ?? 0
-      // Increment opacity by a small value, ensuring it doesn't exceed 1.
-      alpha = Math.min(1, alpha + 0.01)
-      fadeProgress.set(item.id, alpha)
+      // Get current fade progress or initialize to 0.
+      let progress = fadeProgress.get(item.id) ?? 0
+      // Increment progress by a small value, ensuring it doesn't exceed 1.
+      progress = Math.min(1, progress + 0.01)
+      fadeProgress.set(item.id, progress)
 
-      ctx.save()
-      ctx.translate(x, 0)
-      ctx.globalAlpha = alpha
+      // Set opacity based on progress.
+      const alpha = progress
 
-      // First Track: Show only items that are NOT world items.
+      // Calculate transformation parameters:
+      // Scale grows from 0.5 (50%) to 1 (100%)
+      const scale = 0.5 + progress * 0.5
+      // Horizontal offset: starts 20px to the right and moves to 0.
+      const offsetX = (1 - progress) * 20
+      // Vertical offset: starts 30px above and falls to 0.
+      const offsetY = (1 - progress) * -30
+
+      // ------------------------
+      // First Track: Items that are NOT world items.
+      // ------------------------
       const drawFirstTrack = item.type !== 'world' && categoryFilter.value[item.category]
       if (drawFirstTrack) {
+        ctx.save()
+        ctx.translate(x, 0)
+        ctx.globalAlpha = alpha
+        // Apply additional transformation:
+        // - First, pivot around the top-right corner of the item drawing area.
+        ctx.translate(itemWidth, 0)
+        ctx.scale(scale, scale)
+        ctx.translate(-itemWidth, 0)
+        // - Then, apply the extra translation offset.
+        ctx.translate(offsetX, offsetY)
+
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
         ctx.fillRect(0, itemY_local, itemWidth - 10, itemHeight)
         ctx.fillStyle = '#000'
@@ -83,11 +103,23 @@ export function createDrawCanvas(
         const titleEndY = wrapText(ctx, item.tamil_heading, 5, itemY_local + 20, itemWidth - 20, 16)
         ctx.font = '12px sans-serif'
         wrapText(ctx, item.tamil_long_text, 5, titleEndY + 10, itemWidth - 20, 16)
+        ctx.restore()
       }
 
-      // Second Track: Show only items that are NOT tamil items.
+      // ------------------------
+      // Second Track: Items that are NOT tamil items.
+      // ------------------------
       const drawSecondTrack = item.type !== 'tamil' && categoryFilter.value[item.category]
       if (drawSecondTrack) {
+        ctx.save()
+        ctx.translate(x, 0)
+        ctx.globalAlpha = alpha
+        // Apply the same transformation effect.
+        ctx.translate(itemWidth, 0)
+        ctx.scale(scale, scale)
+        ctx.translate(-itemWidth, 0)
+        ctx.translate(offsetX, offsetY)
+
         // Translate into second track's local coordinate system.
         ctx.translate(0, rowHeight)
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
@@ -104,8 +136,8 @@ export function createDrawCanvas(
         )
         ctx.font = '12px sans-serif'
         wrapText(ctx, item.english_long_text, 5, titleEndY + 10, itemWidth - 20, 16)
+        ctx.restore()
       }
-      ctx.restore()
     })
 
     // ------------------------
