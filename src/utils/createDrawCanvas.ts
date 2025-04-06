@@ -5,6 +5,11 @@ import type { Item } from '@/services/dataService'
 // Global Map to track fade progress for each item by its id.
 const fadeProgress = new Map<string, number>()
 
+// Helper function to shorten text at 47 characters with an ellipsis.
+function shortenText(text: string): string {
+  return text.length > 47 ? text.slice(0, 47) + '...' : text
+}
+
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
@@ -24,6 +29,12 @@ export function createDrawCanvas(
 ) {
   let animationFrameId: number
 
+  // Increase the effective width by 2 pixels.
+  const effectiveItemWidth = itemWidth + 2
+
+  // Define color palette (same as used in the minimap logic)
+  const colorPalette = ['#f44336', '#e91e63', '#9c27b0', '#2196f3', '#4caf50', '#ff9800', '#795548']
+
   function drawCanvas() {
     if (!scrollCanvas.value) return
     const ctx = scrollCanvas.value.getContext('2d')
@@ -41,7 +52,7 @@ export function createDrawCanvas(
     // Effective content height for each track
     const trackContentHeight = rowHeight - trackTopMargin - bottomMargin
     // Items take half the effective content height
-    const itemHeight = trackContentHeight / 2
+    const itemHeight = trackContentHeight / 4
     // Year lane height (20px)
     const yearLaneHeight = 20
 
@@ -51,13 +62,16 @@ export function createDrawCanvas(
     // Local Y position for the item so its bottom is 20px above the lane
     const itemY_local = laneY_local - 20 - itemHeight
 
+    // Compute a list of categories (in same order as used in minimap)
+    const categoriesList = Object.keys(categoryFilter.value)
+
     // ------------------------
-    // Phase 1: Draw the Items (with fade‑in and scale/fall effect)
+    // Phase 1: Draw the Items (with fade‑in, scale/fall effect, and colored border on top)
     // ------------------------
     items.value.forEach((item, index) => {
       // Calculate x-position relative to virtual scroll
-      const x = index * itemWidth - scrollX.value
-      if (x + itemWidth < 0 || x > canvasWidth.value) {
+      const x = index * effectiveItemWidth - scrollX.value
+      if (x + effectiveItemWidth < 0 || x > canvasWidth.value) {
         // If item is offscreen, remove its fade progress
         fadeProgress.delete(item.id)
         return
@@ -80,6 +94,11 @@ export function createDrawCanvas(
       // Vertical offset: starts 30px above and falls to 0.
       const offsetY = (1 - progress) * -30
 
+      // Compute the border color based on the item's category.
+      let catIndex = categoriesList.indexOf(item.category)
+      if (catIndex < 0) catIndex = 0
+      const borderColor = colorPalette[catIndex % colorPalette.length]
+
       // ------------------------
       // First Track: Items that are NOT world items.
       // ------------------------
@@ -89,20 +108,34 @@ export function createDrawCanvas(
         ctx.translate(x, 0)
         ctx.globalAlpha = alpha
         // Apply additional transformation:
-        // - First, pivot around the top-right corner of the item drawing area.
-        ctx.translate(itemWidth, 0)
+        // - Pivot around the top-right corner.
+        ctx.translate(effectiveItemWidth, 0)
         ctx.scale(scale, scale)
-        ctx.translate(-itemWidth, 0)
-        // - Then, apply the extra translation offset.
+        ctx.translate(-effectiveItemWidth, 0)
+        // - Apply the extra translation offset.
         ctx.translate(offsetX, offsetY)
 
+        // Draw the background rectangle.
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
-        ctx.fillRect(0, itemY_local, itemWidth - 10, itemHeight)
+        ctx.fillRect(0, itemY_local, effectiveItemWidth - 10, itemHeight)
+        // Draw the top border with height 5px.
+        ctx.fillStyle = borderColor
+        ctx.fillRect(0, itemY_local, effectiveItemWidth - 10, 5)
+
+        // Draw the text.
         ctx.fillStyle = '#000'
-        ctx.font = 'bold 14px sans-serif'
-        const titleEndY = wrapText(ctx, item.tamil_heading, 5, itemY_local + 20, itemWidth - 20, 16)
-        ctx.font = '12px sans-serif'
-        wrapText(ctx, item.tamil_long_text, 5, titleEndY + 10, itemWidth - 20, 16)
+        ctx.font = 'bold 18px sans-serif'
+        const titleEndY = wrapText(
+          ctx,
+          item.tamil_heading,
+          5,
+          itemY_local + 30,
+          effectiveItemWidth - 20,
+          20,
+        )
+        ctx.font = '16px sans-serif'
+        const tamilDescription = shortenText(item.tamil_long_text)
+        wrapText(ctx, tamilDescription, 5, titleEndY + 30, effectiveItemWidth - 20, 20)
         ctx.restore()
       }
 
@@ -115,27 +148,32 @@ export function createDrawCanvas(
         ctx.translate(x, 0)
         ctx.globalAlpha = alpha
         // Apply the same transformation effect.
-        ctx.translate(itemWidth, 0)
+        ctx.translate(effectiveItemWidth, 0)
         ctx.scale(scale, scale)
-        ctx.translate(-itemWidth, 0)
+        ctx.translate(-effectiveItemWidth, 0)
         ctx.translate(offsetX, offsetY)
 
         // Translate into second track's local coordinate system.
         ctx.translate(0, rowHeight)
         ctx.fillStyle = 'rgba(255,255,255,0.8)'
-        ctx.fillRect(0, itemY_local, itemWidth - 10, itemHeight)
+        ctx.fillRect(0, itemY_local, effectiveItemWidth - 10, itemHeight)
+        // Draw the top border using the same border color.
+        ctx.fillStyle = borderColor
+        ctx.fillRect(0, itemY_local, effectiveItemWidth - 10, 5)
+
         ctx.fillStyle = '#000'
-        ctx.font = 'bold 14px sans-serif'
+        ctx.font = 'bold 18px sans-serif'
         const titleEndY = wrapText(
           ctx,
           item.english_heading,
           5,
-          itemY_local + 20,
-          itemWidth - 20,
-          16,
+          itemY_local + 30,
+          effectiveItemWidth - 20,
+          20,
         )
-        ctx.font = '12px sans-serif'
-        wrapText(ctx, item.english_long_text, 5, titleEndY + 10, itemWidth - 20, 16)
+        ctx.font = '16px sans-serif'
+        const englishDescription = shortenText(item.english_long_text)
+        wrapText(ctx, englishDescription, 5, titleEndY + 30, effectiveItemWidth - 20, 20)
         ctx.restore()
       }
     })
@@ -161,34 +199,34 @@ export function createDrawCanvas(
     // ------------------------
     // First Track Year Labels
     items.value.forEach((item, index) => {
-      const x = index * itemWidth - scrollX.value
-      if (x + itemWidth < 0 || x > canvasWidth.value) return
+      const x = index * effectiveItemWidth - scrollX.value
+      if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
       if (item.type === 'world' || !categoryFilter.value[item.category]) return
 
       ctx.save()
       ctx.translate(x, 0)
       ctx.fillStyle = '#000'
-      ctx.font = 'bold 16px sans-serif'
+      ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(item.year_ta, (itemWidth - 10) / 2, laneY_local + yearLaneHeight / 2)
+      ctx.fillText(item.year_ta, (effectiveItemWidth - 10) / 2, laneY_local + yearLaneHeight / 2)
       ctx.restore()
     })
     // Second Track Year Labels
     items.value.forEach((item, index) => {
-      const x = index * itemWidth - scrollX.value
-      if (x + itemWidth < 0 || x > canvasWidth.value) return
+      const x = index * effectiveItemWidth - scrollX.value
+      if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
       if (item.type === 'tamil' || !categoryFilter.value[item.category]) return
 
       ctx.save()
       ctx.translate(x, 0)
       ctx.fillStyle = '#000'
-      ctx.font = 'bold 16px sans-serif'
+      ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(
         item.year_ce + ' C.E.',
-        (itemWidth - 10) / 2,
+        (effectiveItemWidth - 10) / 2,
         rowHeight + laneY_local + yearLaneHeight / 2,
       )
       ctx.restore()
@@ -206,8 +244,6 @@ export function createDrawCanvas(
     ctx.save()
     ctx.fillStyle = 'white'
     ctx.beginPath()
-    // Place the arrow centered vertically in the first lane;
-    // Adjust Y position as desired (here 14px above lane center)
     const arrowCenterY1 = laneY_local + yearLaneHeight / 2 - 14
     ctx.moveTo(centerX, arrowCenterY1 - arrowHeight / 2)
     ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
