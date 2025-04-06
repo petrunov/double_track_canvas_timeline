@@ -129,24 +129,30 @@ export default defineComponent({
   name: 'HorizontalTimeline',
   components: { RecycleScroller },
   setup() {
-    // --- Debounce helper ---
-    const debounce = (fn: Function, delay: number) => {
-      let timer: ReturnType<typeof setTimeout>
-      return (...args: any[]) => {
-        clearTimeout(timer)
-        timer = setTimeout(() => {
-          fn(...args)
-        }, delay)
+    // --- Custom Smooth Scroll Function ---
+    const customSmoothScrollTo = (
+      container: HTMLElement,
+      targetScroll: number,
+      duration: number,
+    ) => {
+      const startScroll = container.scrollLeft
+      const startTime = performance.now()
+
+      const animate = () => {
+        const now = performance.now()
+        const elapsed = now - startTime
+        const t = Math.min(elapsed / duration, 1)
+        // easeInOutQuad easing function
+        const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+        container.scrollLeft = startScroll + (targetScroll - startScroll) * eased
+        if (t < 1) {
+          requestAnimationFrame(animate)
+        }
       }
+      requestAnimationFrame(animate)
     }
 
-    // Wrap scrollTo in a debounced function.
-    const debouncedScrollTo = debounce((scrollLeft: number) => {
-      if (recycleScroller.value) {
-        recycleScroller.value.scrollTo({ left: scrollLeft, behavior: 'auto' })
-      }
-    }, 1)
-
+    // --- Data and Refs ---
     const items = ref<Item[]>([])
     const scrollContainer = ref<HTMLElement | null>(null)
     const recycleScroller = ref<HTMLElement | null>(null)
@@ -159,21 +165,12 @@ export default defineComponent({
     const isIndicatorDragging = ref(false)
     const itemWidth = 200
 
-    // Total content width.
+    // Total content width based on all items.
     const totalContentWidth = computed(() => items.value.length * itemWidth)
-    // The minimap width equals viewport width.
+    // The minimap width is set to the viewport width.
     const minimapWidth = ref(window.innerWidth)
 
-    // Helper: Compute indicator width.
-    const computeIndicatorWidth = (): number => {
-      const leftMargin = 20,
-        rightMargin = 20
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const viewportWidth = recycleScroller.value!.clientWidth
-      return Math.max((availableWidth * viewportWidth) / totalContentWidth.value, 10)
-    }
-
-    // Category filter.
+    // --- Category Filter ---
     const categoryFilter = ref<Record<string, boolean>>({})
     const categories = computed(() => Array.from(new Set(items.value.map((item) => item.category))))
     const allChecked = computed({
@@ -198,6 +195,7 @@ export default defineComponent({
       { immediate: true },
     )
 
+    // --- Update Minimap Width ---
     const updateMinimapWidth = () => {
       minimapWidth.value = window.innerWidth
       updateTransforms()
@@ -247,22 +245,18 @@ export default defineComponent({
       const scrollLeft = container.scrollLeft
       const totalWidth = totalContentWidth.value
 
-      // Calculate indicator width (using the entire minimap width as reference).
+      // Calculate indicator width using the minimap width as reference.
       const indicatorWidth = Math.max((viewportWidth / totalWidth) * minimapWidth.value, 10)
-      // Compute maximum scrollable offset and maximum indicator travel distance.
       const maxScroll = totalWidth - viewportWidth
       const maxIndicatorTravel = minimapWidth.value - indicatorWidth
-      // Compute indicator left position directly.
       const indicatorLeft = (scrollLeft / maxScroll) * maxIndicatorTravel - indicatorWidth / 2
-
-      console.log('Indicator Left:', indicatorLeft)
 
       minimapIndicatorStyle.value = {
         width: indicatorWidth + 'px',
         left: indicatorLeft + 'px',
       }
 
-      // Optionally update minimap parallax (if needed).
+      // Optionally update minimap parallax.
       if (minimap.value && minimap.value.parentElement) {
         const minimapParent = minimap.value.parentElement
         const minimapScrollRange = minimapWidth.value - minimapParent.clientWidth
@@ -271,7 +265,7 @@ export default defineComponent({
       }
     }
 
-    // Unified scroll syncing.
+    // --- Unified Scroll Syncing ---
     let isSyncingScroll = false
     const onScrollHandler = (e: Event) => {
       if (isSyncingScroll) return
@@ -349,7 +343,7 @@ export default defineComponent({
       })
     })
 
-    // Helper: Given a target year, find the closest item and return a scrollLeft to center it.
+    // --- Helper: Get Scroll Position for a Target Year ---
     const getScrollPositionForYear = (targetYear: number): number => {
       if (!items.value.length || !recycleScroller.value) return 0
       const closestIndex = items.value.reduce((prevIndex, currItem, index) => {
@@ -388,7 +382,10 @@ export default defineComponent({
       const containerRect = (
         document.querySelector('.minimap-container') as HTMLElement
       ).getBoundingClientRect()
-      const indicatorWidth = computeIndicatorWidth()
+      const indicatorWidth = Math.max(
+        (recycleScroller.value.clientWidth / totalContentWidth.value) * minimapWidth.value,
+        10,
+      )
       let newCenter = e.clientX - containerRect.left - leftMargin
       newCenter = Math.max(
         indicatorWidth / 2,
@@ -397,32 +394,31 @@ export default defineComponent({
       const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
+
+      // For dragging, update the scroll position immediately.
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
       const targetScroll = getScrollPositionForYear(targetYear)
-      debouncedScrollTo(targetScroll)
+      recycleScroller.value.scrollLeft = targetScroll
     }
     const onMinimapIndicatorMouseUp = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
+      // Optionally, after releasing, you could animate to a final target scroll if needed.
     }
 
     // --- Minimap Click ---
     const onMinimapClick = (e: MouseEvent) => {
       if (!recycleScroller.value) return
-
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
-
       // Calculate click position relative to the minimap container.
       let newIndicatorLeft = e.clientX - containerRect.left
-
-      // Calculate indicator width and clamp newIndicatorLeft accordingly.
       const viewportWidth = recycleScroller.value.clientWidth
       const indicatorWidth = Math.max(
         (viewportWidth / totalContentWidth.value) * minimapWidth.value,
@@ -432,18 +428,14 @@ export default defineComponent({
         0,
         Math.min(newIndicatorLeft, minimapWidth.value - indicatorWidth),
       )
-
-      // Set the indicator position directly.
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-
-      // Calculate ratio and determine target scroll.
       const maxIndicatorTravel = minimapWidth.value - indicatorWidth
       const ratio = newIndicatorLeft / maxIndicatorTravel
       const maxScroll = totalContentWidth.value - viewportWidth
       const targetScroll = ratio * maxScroll
-
-      debouncedScrollTo(targetScroll)
+      // Use custom smooth scrolling instead of the debounced auto scroll.
+      customSmoothScrollTo(recycleScroller.value, targetScroll, 500)
     }
 
     onMounted(async () => {
@@ -763,7 +755,6 @@ export default defineComponent({
   height: 96%;
   padding-top: 90%;
 }
-
 .year-timeline {
   background-color: var(--color-background);
   position: fixed;
