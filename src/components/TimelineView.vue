@@ -72,13 +72,13 @@
 <script lang="ts">
 import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { getItems, type Item } from '@/services/dataService'
+import { createDrawCanvas } from '@/utils/createDrawCanvas'
 
 export default defineComponent({
   name: 'CanvasTimeline',
   setup() {
     // --- Canvas & Scrolling state ---
     const scrollCanvas = ref<HTMLCanvasElement | null>(null)
-    // Virtual scroll offset (in pixels)
     const scrollX = ref(0)
     const itemWidth = 200
     const isDragging = ref(false)
@@ -87,12 +87,10 @@ export default defineComponent({
 
     // --- Data and Items ---
     const items = ref<Item[]>([])
-    // Total virtual content width (all items side by side)
     const totalContentWidth = computed(() => items.value.length * itemWidth)
 
     // --- Canvas dimensions ---
     const canvasWidth = ref(window.innerWidth)
-    // Use height similar to original scroll container height (e.g. viewport height minus minimap/filters)
     const canvasHeight = ref(window.innerHeight - 80)
 
     // --- Minimap State ---
@@ -129,72 +127,44 @@ export default defineComponent({
       { immediate: true },
     )
 
-    // --- Canvas Drawing ---
-    let animationFrameId: number
-
-    const drawCanvas = () => {
-      if (!scrollCanvas.value) return
-      const ctx = scrollCanvas.value.getContext('2d')
-      if (!ctx) return
-
-      // Clear the canvas
-      ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
-
-      // Define rows (two tracks)
-      const rowHeight = canvasHeight.value / 2
-
-      // Loop through all items
-      items.value.forEach((item, index) => {
-        // Calculate the x-position relative to virtual scroll
-        const x = index * itemWidth - scrollX.value
-        // Only draw if the item is within (or near) the viewport
-        if (x + itemWidth < 0 || x > canvasWidth.value) return
-
-        // Determine which track to draw in
-        // Track 1: draw if item.type !== 'world' && category is enabled
-        // Track 2: draw if item.type !== 'tamil' && category is enabled
-        // (Adjust these conditions as needed.)
-        const drawFirstTrack = item.type !== 'world' && categoryFilter.value[item.category]
-        const drawSecondTrack = item.type !== 'tamil' && categoryFilter.value[item.category]
-
-        ctx.save()
-        ctx.translate(x, 0)
-
-        // Draw first track item (upper half)
-        if (drawFirstTrack) {
-          // Background rectangle
-          ctx.fillStyle = 'rgba(255,255,255,0.8)'
-          ctx.fillRect(0, 0, itemWidth - 10, rowHeight - 10)
-          // Draw text (tamil_heading and tamil_long_text)
-          ctx.fillStyle = '#000'
-          ctx.font = 'bold 14px sans-serif'
-          ctx.fillText(item.tamil_heading, 5, 20)
-          ctx.font = '12px sans-serif'
-          ctx.fillText(item.tamil_long_text, 5, 40)
-          // Year timeline (at bottom of track)
-          ctx.font = '10px sans-serif'
-          ctx.fillText(item.year_ta, 5, rowHeight - 5)
+    // --- Text Wrapping Helper ---
+    function wrapText(
+      ctx: CanvasRenderingContext2D,
+      text: string,
+      x: number,
+      y: number,
+      maxWidth: number,
+      lineHeight: number,
+    ): number {
+      text = text != null ? text.toString() : ''
+      const words = text.split(' ')
+      let line = ''
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' '
+        const metrics = ctx.measureText(testLine)
+        if (metrics.width > maxWidth && n > 0) {
+          ctx.fillText(line, x, y)
+          line = words[n] + ' '
+          y += lineHeight
+        } else {
+          line = testLine
         }
-
-        // Draw second track item (lower half)
-        if (drawSecondTrack) {
-          ctx.translate(0, rowHeight)
-          ctx.fillStyle = 'rgba(255,255,255,0.8)'
-          ctx.fillRect(0, 0, itemWidth - 10, rowHeight - 10)
-          ctx.fillStyle = '#000'
-          ctx.font = 'bold 14px sans-serif'
-          ctx.fillText(item.english_heading, 5, 20)
-          ctx.font = '12px sans-serif'
-          ctx.fillText(item.english_long_text, 5, 40)
-          ctx.font = '10px sans-serif'
-          ctx.fillText(item.year_ce + ' C.E.', 5, rowHeight - 5)
-        }
-        ctx.restore()
-      })
-
-      // Request the next frame if needed.
-      animationFrameId = requestAnimationFrame(drawCanvas)
+      }
+      ctx.fillText(line, x, y)
+      return y
     }
+
+    // --- Create the drawing function using our separated module ---
+    const { drawCanvas, cancelAnimation } = createDrawCanvas(
+      scrollCanvas,
+      canvasWidth,
+      canvasHeight,
+      items,
+      itemWidth,
+      scrollX,
+      categoryFilter,
+      wrapText,
+    )
 
     // --- Update Canvas & Minimap dimensions ---
     const updateDimensions = () => {
@@ -212,12 +182,10 @@ export default defineComponent({
     const customSmoothScrollTo = (targetScroll: number, duration: number) => {
       const startScroll = scrollX.value
       const startTime = performance.now()
-
       const animate = () => {
         const now = performance.now()
         const elapsed = now - startTime
         const t = Math.min(elapsed / duration, 1)
-        // easeInOutQuad easing function
         const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
         scrollX.value = startScroll + (targetScroll - startScroll) * eased
         updateTransforms()
@@ -239,7 +207,6 @@ export default defineComponent({
 
     // --- Dragging the canvas ---
     const onMouseDown = (e: MouseEvent) => {
-      // Avoid if clicking on minimap indicator
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging.value = true
       dragStartX = e.clientX
@@ -269,7 +236,6 @@ export default defineComponent({
       const maxScroll = totalWidth - viewportWidth
       const maxIndicatorTravel = minimapWidth.value - indicatorWidth
       const indicatorLeft = (scrollX.value / maxScroll) * maxIndicatorTravel - indicatorWidth / 2
-
       minimapIndicatorStyle.value = {
         width: indicatorWidth + 'px',
         left: indicatorLeft + 'px',
@@ -326,8 +292,6 @@ export default defineComponent({
       const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-
-      // Update scrollX immediately during dragging.
       const years = items.value.map((item) => Number(item.year_ce))
       const minYear = Math.min(...years)
       const maxYear = Math.max(...years)
@@ -367,13 +331,11 @@ export default defineComponent({
       customSmoothScrollTo(targetScroll, 500)
     }
 
-    // --- Animation & Event Listeners Setup ---
     onMounted(async () => {
       items.value = await getItems(3000)
       await nextTick()
       updateDimensions()
       drawCanvas()
-      // Canvas event listeners
       if (scrollCanvas.value) {
         scrollCanvas.value.addEventListener('wheel', onWheel, { passive: false })
         scrollCanvas.value.addEventListener('mousedown', onMouseDown)
@@ -391,7 +353,7 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('resize', updateDimensions)
-      cancelAnimationFrame(animationFrameId)
+      cancelAnimation()
     })
 
     // --- Timeline Ticks & Minimap Rectangles (same as before) ---
