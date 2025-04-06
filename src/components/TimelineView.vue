@@ -338,6 +338,16 @@ export default defineComponent({
       if (scrollCanvas.value) {
         scrollCanvas.value.addEventListener('wheel', onWheel, { passive: false })
         scrollCanvas.value.addEventListener('mousedown', onMouseDown)
+        scrollCanvas.value.addEventListener('touchstart', onTouchStart, { passive: false })
+        scrollCanvas.value.addEventListener('touchmove', onTouchMove, { passive: false })
+        scrollCanvas.value.addEventListener('touchend', onTouchEnd, { passive: false })
+      }
+      // For minimap indicator drag events, add touch listeners as well.
+      const minimapIndicatorElement = document.querySelector('.minimap-indicator') as HTMLElement
+      if (minimapIndicatorElement) {
+        minimapIndicatorElement.addEventListener('touchstart', onMinimapIndicatorTouchStart, {
+          passive: false,
+        })
       }
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
@@ -348,6 +358,13 @@ export default defineComponent({
       if (scrollCanvas.value) {
         scrollCanvas.value.removeEventListener('wheel', onWheel)
         scrollCanvas.value.removeEventListener('mousedown', onMouseDown)
+        scrollCanvas.value.removeEventListener('touchstart', onTouchStart)
+        scrollCanvas.value.removeEventListener('touchmove', onTouchMove)
+        scrollCanvas.value.removeEventListener('touchend', onTouchEnd)
+      }
+      const minimapIndicatorElement = document.querySelector('.minimap-indicator') as HTMLElement
+      if (minimapIndicatorElement) {
+        minimapIndicatorElement.removeEventListener('touchstart', onMinimapIndicatorTouchStart)
       }
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
@@ -438,6 +455,86 @@ export default defineComponent({
         }
       })
     })
+
+    // Touch handlers for dragging the canvas
+    const onTouchStart = (e: TouchEvent) => {
+      // Use first touch point
+      const touch = e.touches[0]
+      // Avoid interference with minimap-indicator touch events.
+      if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
+      isDragging.value = true
+      dragStartX = touch.clientX
+      dragScrollStart = scrollX.value
+      document.body.classList.add('no-select')
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isDragging.value) return
+      const touch = e.touches[0]
+      const dx = touch.clientX - dragStartX
+      scrollX.value = Math.max(
+        0,
+        Math.min(dragScrollStart - dx, totalContentWidth.value - canvasWidth.value),
+      )
+      updateTransforms()
+    }
+
+    const onTouchEnd = () => {
+      isDragging.value = false
+      document.body.classList.remove('no-select')
+    }
+
+    // Touch handlers for the minimap indicator drag
+    const onMinimapIndicatorTouchStart = (e: TouchEvent) => {
+      e.stopPropagation()
+      isIndicatorDragging.value = true
+      indicatorDragStartX = e.touches[0].clientX
+      indicatorDragged = false
+      document.addEventListener('touchmove', onMinimapIndicatorTouchMove)
+      document.addEventListener('touchend', onMinimapIndicatorTouchEnd)
+      document.body.classList.add('no-select')
+    }
+
+    const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
+      if (!isIndicatorDragging.value) return
+      e.preventDefault()
+      const touch = e.touches[0]
+      if (!indicatorDragged && Math.abs(touch.clientX - indicatorDragStartX) > 5) {
+        indicatorDragged = true
+      }
+      const leftMargin = 20,
+        rightMargin = 20
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
+      const containerRect = (
+        document.querySelector('.minimap-container') as HTMLElement
+      ).getBoundingClientRect()
+      const indicatorWidth = Math.max(
+        (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
+        10,
+      )
+      let newCenter = touch.clientX - containerRect.left - leftMargin
+      newCenter = Math.max(
+        indicatorWidth / 2,
+        Math.min(newCenter, availableWidth - indicatorWidth / 2),
+      )
+      const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
+      minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
+      minimapIndicatorStyle.value.width = indicatorWidth + 'px'
+      const years = items.value.map((item) => Number(item.year_ce))
+      const minYear = Math.min(...years)
+      const maxYear = Math.max(...years)
+      const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
+      const targetScroll = getScrollPositionForYear(targetYear)
+      scrollX.value = targetScroll
+      updateTransforms()
+    }
+
+    const onMinimapIndicatorTouchEnd = () => {
+      isIndicatorDragging.value = false
+      document.removeEventListener('touchmove', onMinimapIndicatorTouchMove)
+      document.removeEventListener('touchend', onMinimapIndicatorTouchEnd)
+      document.body.classList.remove('no-select')
+    }
 
     return {
       items,
