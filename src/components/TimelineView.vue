@@ -6,7 +6,6 @@
         <!-- First track (English) -->
         <div class="items-row">
           <RecycleScroller
-            :buffer="50"
             ref="recycleScroller"
             class="scroller"
             :items="items"
@@ -18,6 +17,7 @@
             <div class="item">
               <div
                 class="item-inner"
+                v-fade-in-on-view
                 :class="{ 'hidden-item': item.type === 'world' || !categoryFilter[item.category] }"
               >
                 <h3>{{ item.tamil_heading }}</h3>
@@ -30,7 +30,6 @@
         <!-- Second track (Tamil) -->
         <div class="items-row">
           <RecycleScroller
-            :buffer="50"
             ref="recycleScroller2"
             class="scroller"
             :items="items"
@@ -42,6 +41,7 @@
             <div class="item">
               <div
                 class="item-inner"
+                v-fade-in-on-view
                 :class="{ 'hidden-item': item.type === 'tamil' || !categoryFilter[item.category] }"
               >
                 <h3>{{ item.english_heading }}</h3>
@@ -125,9 +125,55 @@ import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch
 import { getItems, type Item } from '@/services/dataService'
 import { RecycleScroller } from 'vue-virtual-scroller'
 
+// Define the fadeInOnView directive
+const fadeInOnView = {
+  mounted(el: HTMLElement) {
+    // Ensure the element starts without the fade-in class
+    el.classList.remove('fade-in')
+    let removeTimeout: number | null = null
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            // If a removal was scheduled, cancel it
+            if (removeTimeout) {
+              clearTimeout(removeTimeout)
+              removeTimeout = null
+            }
+            // Add fade-in if not already applied
+            if (!el.classList.contains('fade-in')) {
+              el.classList.add('fade-in')
+            }
+          } else {
+            // Delay removal to avoid flicker
+            removeTimeout = window.setTimeout(() => {
+              el.classList.remove('fade-in')
+              removeTimeout = null
+            }, 100) // 100ms delay; adjust as needed
+          }
+        })
+      },
+      { threshold: 0.1 },
+    )
+    observer.observe(el)
+    // Store the observer and timeout id for cleanup if needed
+    ;(el as any).__fadeObserver__ = observer
+    ;(el as any).__removeTimeout__ = removeTimeout
+  },
+  unmounted(el: HTMLElement) {
+    ;(el as any).__fadeObserver__ && (el as any).__fadeObserver__.disconnect()
+    if ((el as any).__removeTimeout__) {
+      clearTimeout((el as any).__removeTimeout__)
+    }
+  },
+}
+
 export default defineComponent({
   name: 'HorizontalTimeline',
   components: { RecycleScroller },
+  directives: {
+    fadeInOnView,
+  },
   setup() {
     // --- Custom Smooth Scroll Function ---
     const customSmoothScrollTo = (
@@ -408,7 +454,6 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.removeEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.remove('no-select')
-      // Optionally, after releasing, you could animate to a final target scroll if needed.
     }
 
     // --- Minimap Click ---
@@ -540,18 +585,21 @@ export default defineComponent({
   flex-direction: column;
   justify-content: flex-end;
   height: 100%;
+  width: 100%;
   padding-bottom: 10px;
   background-color: rgba(255, 255, 255, 0.4);
 }
 .items-row {
   display: flex;
-  flex-direction: row;
+  flex-wrap: wrap; /* or column layout if appropriate */
+  align-items: stretch;
+  height: calc((100vh - 80px) / 2);
 }
 .item {
   width: 200px;
   height: calc((100vh - 80px) / 2);
   box-sizing: border-box;
-  background-color: rgba(255, 255, 255, 0.4);
+  background-color: transparent;
   color: var(--color-text);
   flex-shrink: 0;
 }
@@ -755,7 +803,12 @@ export default defineComponent({
   height: 350px;
   position: fixed;
   top: auto;
-  bottom: 30px;
+  bottom: 35px;
+  opacity: 0;
+  transition: opacity 1s ease; /* Increased duration from 0.5s to 1s */
+}
+.item-inner.fade-in {
+  opacity: 1;
 }
 .year-timeline {
   background-color: var(--color-background);

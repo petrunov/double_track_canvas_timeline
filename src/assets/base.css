@@ -98,3 +98,7 @@ body.dragging * {
 .vue-recycle-scroller {
   scrollbar-width: none; /* For Firefox */
 }
+.vue-recycle-scroller__item-wrapper {
+  position: relative; /* ensures proper stacking context */
+  border-bottom: 1px solid transparent;
+}
