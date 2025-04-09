@@ -86,6 +86,8 @@ export default defineComponent({
 
     // --- Data and Items ---
     const items = ref<Item[]>([])
+    // New ref for grouped items by year.
+    const groupedItems = ref<Record<string, Item[]>>({})
     const totalContentWidth = computed(() => items.value.length * itemWidth)
 
     // --- Canvas dimensions ---
@@ -154,11 +156,12 @@ export default defineComponent({
     }
 
     // --- Create the drawing function using our separated module ---
+    // Notice we now pass groupedItems (instead of items) to drawCanvas.
     const { drawCanvas, cancelAnimation } = createDrawCanvas(
       scrollCanvas,
       canvasWidth,
       canvasHeight,
-      items,
+      groupedItems,
       itemWidth,
       scrollX,
       categoryFilter,
@@ -331,7 +334,11 @@ export default defineComponent({
     }
 
     onMounted(async () => {
-      items.value = await getItems(3000)
+      // getItems now returns both items and groupedItems
+      const result = await getItems(30)
+      items.value = result.items
+      groupedItems.value = result.groupedItems
+
       await nextTick()
       updateDimensions()
       drawCanvas()
@@ -342,7 +349,6 @@ export default defineComponent({
         scrollCanvas.value.addEventListener('touchmove', onTouchMove, { passive: false })
         scrollCanvas.value.addEventListener('touchend', onTouchEnd, { passive: false })
       }
-      // For minimap indicator drag events, add touch listeners as well.
       const minimapIndicatorElement = document.querySelector('.minimap-indicator') as HTMLElement
       if (minimapIndicatorElement) {
         minimapIndicatorElement.addEventListener('touchstart', onMinimapIndicatorTouchStart, {
@@ -411,39 +417,24 @@ export default defineComponent({
     ]
     const minimapRectangles = computed(() => {
       if (!items.value.length) return []
-
-      // Define horizontal margins and available width in the minimap
       const leftMargin = 20
       const rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-
-      // Use the same effective item width as in the canvas drawing logic
       const effectiveItemWidth = itemWidth + 2
       const totalContentWidthEffective = items.value.length * effectiveItemWidth
-
-      // Scale factor to map timeline width to minimap width
       const scaleFactor = availableWidth / totalContentWidthEffective
-
-      // Define vertical positioning relative to the timescale.
-      const timescaleHeight = 20 // height of your timescale element
-      const firstTrackTop = timescaleHeight + 15 // e.g., 25px from top
-      const secondTrackTop = firstTrackTop + 5 // e.g., 30px from top
+      const timescaleHeight = 20
+      const firstTrackTop = timescaleHeight + 15
+      const secondTrackTop = firstTrackTop + 5
 
       return items.value.map((item, index) => {
-        // Calculate horizontal position and width
         const x = index * effectiveItemWidth
         const left = leftMargin + x * scaleFactor
         const rectWidth = effectiveItemWidth * scaleFactor
-
-        // Set the vertical position: first row for non-'world' items,
-        // second row for 'world' items.
         const top = item.type === 'world' ? secondTrackTop : firstTrackTop
         const rectHeight = 4
-
-        // Use your color palette to assign a color based on category.
         const catIndex = categories.value.indexOf(item.category)
         const color = colorPalette[catIndex % colorPalette.length]
-
         return {
           left,
           top,
@@ -456,18 +447,15 @@ export default defineComponent({
       })
     })
 
-    // Touch handlers for dragging the canvas
+    // --- Touch handlers for dragging the canvas ---
     const onTouchStart = (e: TouchEvent) => {
-      // Use first touch point
       const touch = e.touches[0]
-      // Avoid interference with minimap-indicator touch events.
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging.value = true
       dragStartX = touch.clientX
       dragScrollStart = scrollX.value
       document.body.classList.add('no-select')
     }
-
     const onTouchMove = (e: TouchEvent) => {
       if (!isDragging.value) return
       const touch = e.touches[0]
@@ -478,13 +466,12 @@ export default defineComponent({
       )
       updateTransforms()
     }
-
     const onTouchEnd = () => {
       isDragging.value = false
       document.body.classList.remove('no-select')
     }
 
-    // Touch handlers for the minimap indicator drag
+    // --- Touch handlers for the minimap indicator drag ---
     const onMinimapIndicatorTouchStart = (e: TouchEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
@@ -494,7 +481,6 @@ export default defineComponent({
       document.addEventListener('touchend', onMinimapIndicatorTouchEnd)
       document.body.classList.add('no-select')
     }
-
     const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
       if (!isIndicatorDragging.value) return
       e.preventDefault()
@@ -528,7 +514,6 @@ export default defineComponent({
       scrollX.value = targetScroll
       updateTransforms()
     }
-
     const onMinimapIndicatorTouchEnd = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('touchmove', onMinimapIndicatorTouchMove)
@@ -538,6 +523,7 @@ export default defineComponent({
 
     return {
       items,
+      groupedItems,
       scrollCanvas,
       minimap,
       minimapWidth,
@@ -557,6 +543,7 @@ export default defineComponent({
 </script>
 
 <style scoped>
+/* (Styles remain unchanged) */
 * {
   user-select: none !important;
 }
@@ -565,14 +552,11 @@ export default defineComponent({
   height: 100vh;
   overflow: hidden;
 }
-
-/* Canvas takes the place of the original scroll container */
 .scroll-canvas {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
-  /* Height is set dynamically (viewport height minus 80px) */
   background-color: var(--color-background-soft);
   background-image: url('@/assets/bg.jpg');
   background-size: cover;
@@ -580,8 +564,6 @@ export default defineComponent({
   background-position: center;
   cursor: default;
 }
-
-/* Minimap and other elements remain largely unchanged */
 .minimap-container {
   position: fixed;
   bottom: 40px;
