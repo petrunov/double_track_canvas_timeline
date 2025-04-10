@@ -70,7 +70,7 @@
 
 <script lang="ts">
 import { defineComponent, ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
-import { getItems, type Item } from '@/services/dataService'
+import { getItems, type Item, type YearGroup } from '@/services/dataService'
 import { createDrawCanvas } from '@/utils/createDrawCanvas'
 
 export default defineComponent({
@@ -87,7 +87,7 @@ export default defineComponent({
     // --- Data and Items ---
     const items = ref<Item[]>([])
     // New ref for grouped items by year.
-    const groupedItems = ref<Record<string, Item[]>>({})
+    const groupedItems = ref<YearGroup[]>([])
     const totalContentWidth = computed(() => items.value.length * itemWidth)
 
     // --- Canvas dimensions ---
@@ -335,7 +335,7 @@ export default defineComponent({
 
     onMounted(async () => {
       // getItems now returns both items and groupedItems
-      const result = await getItems(30)
+      const result = await getItems()
       items.value = result.items
       groupedItems.value = result.groupedItems
 

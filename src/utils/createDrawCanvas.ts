@@ -1,15 +1,11 @@
-// src/utils/createDrawCanvas.ts
 import type { Ref } from 'vue'
-import type { GroupedItem, Item } from '@/services/dataService'
-
-// Global Map to track fade progress for each item by its id.
-const fadeProgress = new Map<string, number>()
+import type { YearGroup } from '@/services/dataService'
 
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
   canvasHeight: Ref<number>,
-  groupedItems: Ref<Record<string, GroupedItem[]>>,
+  groupedItems: Ref<YearGroup[]>,
   itemWidth: number,
   scrollX: Ref<number>,
   categoryFilter: Ref<Record<string, boolean>>,
@@ -22,36 +18,33 @@ export function createDrawCanvas(
     lineHeight: number,
   ) => number,
 ) {
-  let animationFrameId: number
+  const EFFECTIVE_WIDTH_OFFSET = 2
+  const GROUP_ITEM_HEIGHT = 30
+  const TEXT_MARGIN = 5
+  const BASE_FONT_SIZE = 14
+  const LINE_HEIGHT_MULTIPLIER = 20
+  const SINGLE_ITEM_TEXT_Y_OFFSET = 30
 
-  // Increase the effective width by 2 pixels.
-  const effectiveItemWidth = itemWidth + 2
+  const MIN_SCREEN_WIDTH = 320
+  const MAX_SCREEN_WIDTH = 1920
+  const MIN_SCALE = 0.8
+  const MAX_SCALE = 1.2
 
-  // Screen size and scaling constants.
-  const minScreenWidth = 320 // typical minimum mobile width
-  const maxScreenWidth = 1920 // typical desktop width
-  const minScale = 0.8 // scale factor at minScreenWidth
-  const maxScale = 1.2 // scale factor at maxScreenWidth
+  const effectiveItemWidth = itemWidth + EFFECTIVE_WIDTH_OFFSET
 
   const getScaleFactor = () => {
-    // Clamp the current canvas width between our min and max screen widths.
-    const clampedWidth = Math.max(minScreenWidth, Math.min(canvasWidth.value, maxScreenWidth))
-    // Calculate the interpolation ratio.
-    const ratio = (clampedWidth - minScreenWidth) / (maxScreenWidth - minScreenWidth)
-    // Linearly interpolate between minScale and maxScale.
-    return minScale + (maxScale - minScale) * ratio
+    const clampedWidth = Math.max(MIN_SCREEN_WIDTH, Math.min(canvasWidth.value, MAX_SCREEN_WIDTH))
+    const ratio = (clampedWidth - MIN_SCREEN_WIDTH) / (MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
+    return MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
   }
 
-  /**
-   * Returns layout parameters used for drawing.
-   */
   function getLayoutParams() {
     const rowHeight = canvasHeight.value / 2
     const marginFactor = 0.05
     const trackTopMargin = canvasHeight.value * marginFactor
     const bottomMargin = 10
     const trackContentHeight = rowHeight - trackTopMargin - bottomMargin
-    const itemHeight = trackContentHeight / 3
+    const itemHeight = GROUP_ITEM_HEIGHT * 4
     const yearLaneHeight = 20
     const laneY_local = trackTopMargin + trackContentHeight - yearLaneHeight
     const itemY_local = laneY_local - 20 - itemHeight
@@ -67,37 +60,23 @@ export function createDrawCanvas(
     }
   }
 
-  /**
-   * Helper function to extract the first item for each year.
-   */
-  function getFirstItems(): Item[] {
-    return Object.values(groupedItems.value).map((group) => group[0])
-  }
+  const FADE_INITIAL_SCALE = 0.5
+  const FADE_FINAL_SCALE = 1.0
+  const FADE_TRANSLATE_X = 20
+  const FADE_TRANSLATE_Y = 30
 
-  /**
-   * Updates the fade progress for an item and returns the transformation parameters.
-   */
+  const fadeProgress = new Map<string, number>()
   function updateFadeProgress(itemId: string) {
     let progress = fadeProgress.get(itemId) ?? 0
     progress = Math.min(1, progress + 0.01)
     fadeProgress.set(itemId, progress)
-
-    // Use the fade progress for the opacity.
     const alpha = progress
-    // Compute fade‑specific transformation values:
-    // Scale grows from 0.5 (50%) to 1 (100%).
-    const fadeScale = 0.5 + progress * 0.5
-    // Horizontal offset: starts 20px to the right and moves to 0.
-    const offsetX = (1 - progress) * 20
-    // Vertical offset: starts 30px above and falls to 0.
-    const offsetY = (1 - progress) * -30
-
+    const fadeScale = FADE_INITIAL_SCALE + progress * (FADE_FINAL_SCALE - FADE_INITIAL_SCALE)
+    const offsetX = (1 - progress) * FADE_TRANSLATE_X
+    const offsetY = (1 - progress) * -FADE_TRANSLATE_Y
     return { alpha, fadeScale, offsetX, offsetY }
   }
 
-  /**
-   * Applies the fade-in transformation to the current context.
-   */
   function applyFadeTransform(
     ctx: CanvasRenderingContext2D,
     fadeScale: number,
@@ -110,126 +89,24 @@ export function createDrawCanvas(
     ctx.translate(offsetX, offsetY)
   }
 
-  /**
-   * Draws a single item on both tracks if it meets the category filter.
-   */
-  function drawItem(
-    ctx: CanvasRenderingContext2D,
-    item: Item,
-    index: number,
-    layout: ReturnType<typeof getLayoutParams>,
-    globalScale: number,
-  ) {
-    const x = index * effectiveItemWidth - scrollX.value
-    if (x + effectiveItemWidth < 0 || x > canvasWidth.value) {
-      // Remove fade progress if the item is offscreen.
-      fadeProgress.delete(String(item.id))
-      return
+  function clipText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+    let txt = text || ''
+    if (ctx.measureText(txt).width <= maxWidth) return txt
+    while (ctx.measureText(txt + '...').width > maxWidth && txt.length > 0) {
+      txt = txt.slice(0, -1)
     }
-
-    const { alpha, fadeScale, offsetX, offsetY } = updateFadeProgress(String(item.id))
-
-    // New logic based on category instead of type:
-    // First Track: Items NOT in "World History"
-    if (item.category.toLowerCase() !== 'world history' && categoryFilter.value[item.category]) {
-      ctx.save()
-      ctx.translate(x, 0)
-      ctx.globalAlpha = alpha
-      // Apply fade-in transformation.
-      applyFadeTransform(ctx, fadeScale, offsetX, offsetY)
-
-      // Draw background rectangle.
-      ctx.fillStyle = 'rgba(255,255,255,0.8)'
-      ctx.fillRect(0, layout.itemY_local, effectiveItemWidth - 10, layout.itemHeight)
-      // Draw text using Tamil content.
-      ctx.fillStyle = '#000'
-      ctx.font = `bold ${14 * globalScale}px sans-serif`
-      const titleEndY = wrapText(
-        ctx,
-        item.tamil_heading,
-        5,
-        layout.itemY_local + 30,
-        effectiveItemWidth - 20,
-        20 * globalScale,
-      )
-      ctx.font = `${14 * globalScale}px sans-serif`
-      const tamilDescription =
-        item.tamil_long_text.length > 47
-          ? item.tamil_long_text.slice(0, 47) + '...'
-          : item.tamil_long_text
-      wrapText(ctx, tamilDescription, 5, titleEndY + 30, effectiveItemWidth - 20, 20 * globalScale)
-      ctx.restore()
-    }
-
-    // Second Track: Items from "World History"
-    if (item.category.toLowerCase() === 'world history' && categoryFilter.value[item.category]) {
-      ctx.save()
-      ctx.translate(x, 0)
-      ctx.globalAlpha = alpha
-      // Apply fade‑in transformation.
-      applyFadeTransform(ctx, fadeScale, offsetX, offsetY)
-
-      // Translate into second track’s coordinate system.
-      ctx.translate(0, layout.rowHeight)
-      ctx.fillStyle = 'rgba(255,255,255,0.8)'
-      ctx.fillRect(0, layout.itemY_local, effectiveItemWidth - 10, layout.itemHeight)
-
-      ctx.fillStyle = '#000'
-      ctx.font = `bold ${14 * globalScale}px sans-serif`
-      const titleEndY = wrapText(
-        ctx,
-        item.english_heading,
-        5,
-        layout.itemY_local + 30,
-        effectiveItemWidth - 20,
-        20 * globalScale,
-      )
-      ctx.font = `${14 * globalScale}px sans-serif`
-      const englishDescription =
-        item.english_long_text.length > 47
-          ? item.english_long_text.slice(0, 47) + '...'
-          : item.english_long_text
-      wrapText(
-        ctx,
-        englishDescription,
-        5,
-        titleEndY + 30,
-        effectiveItemWidth - 20,
-        20 * globalScale,
-      )
-      ctx.restore()
-    }
+    return txt + '...'
   }
 
-  /**
-   * Loops through the first item of each year group and draws them.
-   */
-  function drawItems(
-    ctx: CanvasRenderingContext2D,
-    globalScale: number,
-    layout: ReturnType<typeof getLayoutParams>,
-  ) {
-    console.log(groupedItems.value)
-    const firstItems = getFirstItems()
-    firstItems.forEach((item, index) => {
-      drawItem(ctx, item, index, layout, globalScale)
-    })
-  }
-
-  /**
-   * Draws the background year lanes.
-   */
   function drawYearLanes(
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
   ) {
-    // First track lane.
     ctx.save()
     ctx.fillStyle = 'white'
     ctx.fillRect(0, layout.laneY_local, canvasWidth.value, layout.yearLaneHeight)
     ctx.restore()
 
-    // Second track lane.
     ctx.save()
     ctx.translate(0, layout.rowHeight)
     ctx.fillStyle = 'white'
@@ -237,115 +114,154 @@ export function createDrawCanvas(
     ctx.restore()
   }
 
-  /**
-   * Draws the year labels for both tracks.
-   */
   function drawYearLabels(
     ctx: CanvasRenderingContext2D,
     globalScale: number,
     layout: ReturnType<typeof getLayoutParams>,
   ) {
-    const firstItems = getFirstItems()
-
-    // First Track: Year Labels for items NOT in "World History"
-    firstItems.forEach((item, index) => {
-      const x = index * effectiveItemWidth - scrollX.value
-      if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
-      if (item.category.toLowerCase() === 'world history' || !categoryFilter.value[item.category])
-        return
-
-      ctx.save()
-      ctx.translate(x, 0)
-      ctx.fillStyle = '#000'
-      ctx.font = `${14 * globalScale}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(
-        String(item.year_ta),
-        (effectiveItemWidth - 10) / 2,
-        layout.laneY_local + layout.yearLaneHeight / 2,
-      )
-      ctx.restore()
-    })
-
-    // Second Track: Year Labels for items in "World History"
-    firstItems.forEach((item, index) => {
-      const x = index * effectiveItemWidth - scrollX.value
-      if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
-      if (item.category.toLowerCase() !== 'world history' || !categoryFilter.value[item.category])
-        return
-
-      ctx.save()
-      ctx.translate(x, 0)
-      ctx.fillStyle = '#000'
-      ctx.font = `${14 * globalScale}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(
-        `${item.year_ce} C.E.`,
-        (effectiveItemWidth - 10) / 2,
-        layout.rowHeight + layout.laneY_local + layout.yearLaneHeight / 2,
-      )
-      ctx.restore()
+    let flatIndex = 0
+    groupedItems.value.forEach((yearGroup) => {
+      yearGroup.groups.forEach(() => {
+        const x = flatIndex * effectiveItemWidth - scrollX.value
+        if (x + effectiveItemWidth < 0 || x > canvasWidth.value) {
+          flatIndex++
+          return
+        }
+        ctx.save()
+        ctx.font = `${BASE_FONT_SIZE * globalScale}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#000'
+        ctx.fillText(
+          String(yearGroup.year),
+          x + (effectiveItemWidth - 10) / 2,
+          layout.laneY_local + layout.yearLaneHeight / 2,
+        )
+        ctx.fillText(
+          String(yearGroup.year) + ' C.E.',
+          x + (effectiveItemWidth - 10) / 2,
+          layout.rowHeight + layout.laneY_local + layout.yearLaneHeight / 2,
+        )
+        ctx.restore()
+        flatIndex++
+      })
     })
   }
 
-  /**
-   * Draws arrow indicators for the year lanes.
-   */
   function drawArrowIndicators(
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
   ) {
     const centerX = canvasWidth.value / 2
-    const arrowWidth = 20
-    const arrowHeight = 10
+    const ARROW_WIDTH = 20
+    const ARROW_HEIGHT = 10
 
-    // First Track Arrow:
     ctx.save()
     ctx.fillStyle = 'white'
     ctx.beginPath()
     const arrowCenterY1 = layout.laneY_local + layout.yearLaneHeight / 2 - 14
-    ctx.moveTo(centerX, arrowCenterY1 - arrowHeight / 2)
-    ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
-    ctx.lineTo(centerX + arrowWidth / 2, arrowCenterY1 + arrowHeight / 2)
+    ctx.moveTo(centerX, arrowCenterY1 - ARROW_HEIGHT / 2)
+    ctx.lineTo(centerX - ARROW_WIDTH / 2, arrowCenterY1 + ARROW_HEIGHT / 2)
+    ctx.lineTo(centerX + ARROW_WIDTH / 2, arrowCenterY1 + ARROW_HEIGHT / 2)
     ctx.closePath()
     ctx.fill()
     ctx.restore()
 
-    // Second Track Arrow:
     ctx.save()
     ctx.fillStyle = 'white'
     ctx.beginPath()
     const arrowCenterY2 = layout.rowHeight + layout.laneY_local + layout.yearLaneHeight / 2 - 14
-    ctx.moveTo(centerX, arrowCenterY2 - arrowHeight / 2)
-    ctx.lineTo(centerX - arrowWidth / 2, arrowCenterY2 + arrowHeight / 2)
-    ctx.lineTo(centerX + arrowWidth / 2, arrowCenterY2 + arrowHeight / 2)
+    ctx.moveTo(centerX, arrowCenterY2 - ARROW_HEIGHT / 2)
+    ctx.lineTo(centerX - ARROW_WIDTH / 2, arrowCenterY2 + ARROW_HEIGHT / 2)
+    ctx.lineTo(centerX + ARROW_WIDTH / 2, arrowCenterY2 + ARROW_HEIGHT / 2)
     ctx.closePath()
     ctx.fill()
     ctx.restore()
   }
 
-  /**
-   * The main draw loop.
-   */
+  let animationFrameId: number
+
   function drawCanvas() {
     if (!scrollCanvas.value) return
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Clear the canvas.
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
-
     const globalScale = getScaleFactor()
     const layout = getLayoutParams()
 
-    drawItems(ctx, globalScale, layout)
+    let flatColumnIndex = 0
+    groupedItems.value.forEach((yearGroup) => {
+      yearGroup.groups.forEach((groupColumn) => {
+        const x = flatColumnIndex * effectiveItemWidth - scrollX.value
+        if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
+          const drawTrack = (
+            items: typeof groupColumn.tamil,
+            trackOffsetY: number,
+            getTitle: (item: (typeof items)[0]) => string,
+          ) => {
+            if (!items.length) return
+            ctx.save()
+            ctx.translate(x, trackOffsetY)
+
+            if (items.length === 1) {
+              const item = items[0]
+              const titleText = getTitle(item)
+              const { alpha, fadeScale, offsetX, offsetY } = updateFadeProgress(String(item.id))
+              ctx.globalAlpha = alpha
+              ctx.save()
+              applyFadeTransform(ctx, fadeScale, offsetX, offsetY)
+              ctx.fillStyle = 'rgba(255,255,255,0.8)'
+              ctx.fillRect(0, layout.itemY_local, effectiveItemWidth - 10, layout.itemHeight)
+              ctx.fillStyle = '#000'
+              ctx.font = `bold ${BASE_FONT_SIZE * globalScale}px sans-serif`
+              wrapText(
+                ctx,
+                titleText,
+                TEXT_MARGIN,
+                layout.itemY_local + SINGLE_ITEM_TEXT_Y_OFFSET,
+                effectiveItemWidth - 20,
+                LINE_HEIGHT_MULTIPLIER * globalScale,
+              )
+              ctx.restore()
+            } else {
+              const groupCount = items.length
+              const startY = layout.itemY_local + layout.itemHeight - groupCount * GROUP_ITEM_HEIGHT
+              items.forEach((item, i) => {
+                ctx.save()
+                const y = startY + i * GROUP_ITEM_HEIGHT
+                const { alpha, fadeScale, offsetX, offsetY } = updateFadeProgress(String(item.id))
+                ctx.globalAlpha = alpha
+                applyFadeTransform(ctx, fadeScale, offsetX, offsetY)
+                ctx.fillStyle = 'rgba(255,255,255,0.8)'
+                ctx.fillRect(0, y, effectiveItemWidth - 10, GROUP_ITEM_HEIGHT)
+                ctx.fillStyle = '#000'
+                ctx.font = `bold ${BASE_FONT_SIZE * globalScale}px sans-serif`
+                ctx.textAlign = 'left'
+                ctx.textBaseline = 'middle'
+                const clippedTitle = clipText(
+                  ctx,
+                  getTitle(item),
+                  effectiveItemWidth - 2 * TEXT_MARGIN,
+                )
+                ctx.fillText(clippedTitle, TEXT_MARGIN, y + GROUP_ITEM_HEIGHT / 2)
+                ctx.restore()
+              })
+            }
+            ctx.restore()
+          }
+
+          drawTrack(groupColumn.tamil, 0, (item) => item.tamil_heading || '')
+          drawTrack(groupColumn.world, layout.rowHeight, (item) => item.english_heading || '')
+        }
+        flatColumnIndex++
+      })
+    })
+
     drawYearLanes(ctx, layout)
     drawYearLabels(ctx, globalScale, layout)
     drawArrowIndicators(ctx, layout)
 
-    // Request the next animation frame.
     animationFrameId = requestAnimationFrame(drawCanvas)
   }
 

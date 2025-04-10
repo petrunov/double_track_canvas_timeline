@@ -1,4 +1,12 @@
-// types.ts
+// dataService.ts
+
+// --- Interfaces ---
+
+export interface Category {
+  key: number
+  collection: string
+}
+
 export interface Item {
   id: number
   tamil_heading: string
@@ -9,21 +17,28 @@ export interface Item {
   tamil_long_text: string
   featured_image: string
   additional_images: string[]
-  category: string
+  category: string // normalized category name
   index: number
   date: string
+  type: string // retained from BE; not used in track determination here
 }
 
+export interface GroupColumn {
+  groupIndex: number
+  tamil: Item[]
+  world: Item[]
+}
+
+export interface YearGroup {
+  year: number
+  groups: GroupColumn[]
+}
+
+/**
+ * Old helper: Groups items by year into a record.
+ */
 export interface ItemsByYear {
   [year: string]: Item[]
-}
-
-// utils.ts
-// The Tamil Vikram era conversion function.
-// For CE years (year >= 1): Tamil Year = CE Year + 3112.
-// For BCE years (year < 1): Tamil Year = 3113 + CE Year.
-export function convertToTamilVikramEra(yearCE: number): number {
-  return yearCE >= 1 ? yearCE + 3112 : 3113 + yearCE
 }
 
 export function restructureItemsByYear(items: Item[]): ItemsByYear {
@@ -36,63 +51,172 @@ export function restructureItemsByYear(items: Item[]): ItemsByYear {
   }, {} as ItemsByYear)
 }
 
-// In the future these functions would use fetch calls to your BE endpoints.
-// For now, they import local JSON files.
-async function getEventsData(): Promise<unknown> {
-  // Simulate a call to a BE endpoint for events.
-  // Replace with: return fetch('<events-endpoint>').then(r => r.json())
-  return import('/src/assets/events.json')
+// --- Raw Data Interfaces ---
+
+interface RawEvent {
+  id: number
+  Heading_Tamil: string
+  Heading_English: string
+  Year_TA: string
+  DetailedText_Tamil: string
+  DetailedText_English: string
+  FeaturedImage: string
+  Index: string
+  Date: string | null
+  Year_CE_Type: string
+  Year_CE_Int: number
+  Category: Category | null
+  AdditionalImages: string[]
 }
 
-async function getCategoriesData(): Promise<unknown> {
-  // Simulate a call to a BE endpoint for categories.
-  // Replace with: return fetch('<categories-endpoint>').then(r => r.json())
-  return import('/src/assets/categories.json')
+interface RawCategory {
+  id: number
+  name: string
+}
+
+// --- Utility Functions ---
+
+/**
+ * Converts a CE year to the Tamil Vikram Era.
+ * For CE years (year >= 1): Tamil Year = CE Year + 3112.
+ * For BCE years (year < 1): Tamil Year = 3113 + CE Year.
+ */
+export function convertToTamilVikramEra(yearCE: number): number {
+  return yearCE >= 1 ? yearCE + 3112 : 3113 + yearCE
 }
 
 /**
- * getItems loads the events and categories,
- * normalizes the events data so that:
- *   - the category becomes just the category name;
- *   - if the event’s category is null, it defaults to "World History".
- * Then the items are sorted by ascending CE year and grouped by year.
+ * Determines the track for an item based on its normalized category.
+ * If the category is "World History" (or is missing), it returns "world";
+ * otherwise, it returns "tamil".
  */
-export async function getItems(): Promise<{ items: Item[]; groupedItems: ItemsByYear }> {
-  // Load the raw data (simulate BE endpoints)
+function getItemTrack(item: Item): 'tamil' | 'world' {
+  if (!item.category || item.category === 'World History') {
+    return 'world'
+  }
+  return 'tamil'
+}
+
+/**
+ * Groups items by their year (using year_ce) and then by track.
+ * For each year, items in each track are split into chunks (columns) of up to 4 items.
+ * Both the tamil and world tracks are aligned by ensuring that each YearGroup has the same
+ * number of groups (filling missing groups with empty arrays).
+ *
+ * @param items - The array of normalized items.
+ * @returns An array of YearGroup objects.
+ */
+export function restructureItemsGroupedByYearAndTrack(items: Item[]): YearGroup[] {
+  const yearMap: Record<string, { tamil: Item[]; world: Item[] }> = {}
+
+  items.forEach((item) => {
+    const yearKey = String(item.year_ce)
+    if (!yearMap[yearKey]) {
+      yearMap[yearKey] = { tamil: [], world: [] }
+    }
+    if (getItemTrack(item) === 'world') {
+      yearMap[yearKey].world.push(item)
+    } else {
+      yearMap[yearKey].tamil.push(item)
+    }
+  })
+
+  const chunkArray = (arr: Item[]): Item[][] => {
+    const chunks: Item[][] = []
+    for (let i = 0; i < arr.length; i += 4) {
+      chunks.push(arr.slice(i, i + 4))
+    }
+    return chunks
+  }
+
+  const yearGroups: YearGroup[] = []
+  Object.keys(yearMap)
+    .sort((a, b) => Number(a) - Number(b))
+    .forEach((yearKey) => {
+      const year = Number(yearKey)
+      const tamilItems = yearMap[yearKey].tamil
+      const worldItems = yearMap[yearKey].world
+
+      const tamilGroups = chunkArray(tamilItems)
+      const worldGroups = chunkArray(worldItems)
+      const maxGroupCount = Math.max(tamilGroups.length, worldGroups.length, 1)
+
+      const groups: GroupColumn[] = []
+      for (let i = 0; i < maxGroupCount; i++) {
+        groups.push({
+          groupIndex: i,
+          tamil: tamilGroups[i] || [],
+          world: worldGroups[i] || [],
+        })
+      }
+      yearGroups.push({ year, groups })
+    })
+
+  return yearGroups
+}
+
+// --- Data Loading Functions ---
+
+// Define the expected type for the events JSON.
+interface EventsResponse {
+  data: RawEvent[]
+}
+
+// Define the expected type for the categories JSON.
+interface CategoriesResponse {
+  data: RawCategory[]
+}
+
+/**
+ * Simulates a backend call to fetch events data.
+ * Replace this with an actual fetch call for production.
+ */
+async function getEventsData(): Promise<EventsResponse> {
+  return import('/src/assets/events.json') as Promise<EventsResponse>
+}
+
+/**
+ * Simulates a backend call to fetch categories data.
+ * Replace this with an actual fetch call for production.
+ */
+async function getCategoriesData(): Promise<CategoriesResponse> {
+  return import('/src/assets/categories.json') as Promise<CategoriesResponse>
+}
+
+/**
+ * Loads events and categories data, normalizes the events by:
+ *   - Converting the CE year to the Tamil Vikram Era.
+ *   - Normalizing the category: if the event’s Category exists and has a key, use the
+ *     categoryLookup to get its name; if not, default to "World History".
+ * All original properties are retained, and the items are sorted by ascending CE year.
+ * Finally, the items are grouped by year using restructureItemsGroupedByYearAndTrack.
+ *
+ * @returns A promise resolving with an object containing the normalized items and groupedItems.
+ */
+export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGroup[] }> {
   const eventsResponse = await getEventsData()
   const categoriesResponse = await getCategoriesData()
 
-  // Both endpoints are expected to have a "data" property.
-  const rawEvents: unknown[] = eventsResponse.data
-  const rawCategories: unknown[] = categoriesResponse.data
+  const rawEvents = eventsResponse.data
+  const rawCategories = categoriesResponse.data
 
-  // Build a quick lookup for categories by id.
+  // Build a lookup for category names by id.
   const categoryLookup: { [id: number]: string } = {}
   rawCategories.forEach((cat) => {
-    // Assuming each category object has an "id" and a "name"
     categoryLookup[cat.id] = cat.name
   })
 
-  // Normalize each event from the BE to our internal Item format.
+  // Normalize each event into our internal Item format.
   const items: Item[] = rawEvents.map((event) => {
-    // Use "Year_CE_Int" for the CE year.
-    const year_ce: number = event.Year_CE_Int
-
-    // Compute the Tamil Vikram year using our helper.
-    const year_ta: number = convertToTamilVikramEra(year_ce)
-
-    // Determine the category name.
-    // If the event includes a Category with a "key", look it up.
-    // Otherwise, use "World History" as default.
-    let categoryName: string = 'World History'
+    const year_ce = event.Year_CE_Int
+    const year_ta = convertToTamilVikramEra(year_ce)
+    let categoryName = 'World History'
     if (event.Category && event.Category.key) {
-      // If a matching category is found, use its name.
-      categoryName = categoryLookup[event.Category.key] || categoryName
+      categoryName = categoryLookup[event.Category.key] || 'World History'
     }
-
     return {
       id: event.id,
-      tamil_heading: event.Heading_Tamil || '', // fallback to empty string if null
+      tamil_heading: event.Heading_Tamil || '',
       english_heading: event.Heading_English || '',
       year_ce,
       year_ta,
@@ -101,12 +225,8 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: ItemsBy
       featured_image: event.FeaturedImage || '',
       additional_images: event.AdditionalImages || [],
       category: categoryName,
-      // "Index" in the BE data might be a string; convert it to a number.
       index: Number(event.Index),
-      // Use event.Date if provided; otherwise default to an empty string.
       date: event.Date || '',
-      // For "type" we use the provided Year_CE_Type field (converted to string)
-      // or default to "world"
       type: event.Year_CE_Type ? event.Year_CE_Type.toString() : 'world',
     }
   })
@@ -114,10 +234,9 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: ItemsBy
   // Sort items by ascending CE year.
   items.sort((a, b) => a.year_ce - b.year_ce)
 
-  // Group the items by year using the provided helper.
-  const groupedItems = restructureItemsByYear(items)
+  // Group the items using our new restructuring function.
+  const groupedItems = restructureItemsGroupedByYearAndTrack(items)
 
   console.log('groupedItems', groupedItems)
-
   return Promise.resolve({ items, groupedItems })
 }
