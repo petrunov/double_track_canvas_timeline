@@ -6,7 +6,7 @@ export function createDrawCanvas(
   canvasWidth: Ref<number>,
   canvasHeight: Ref<number>,
   groupedItems: Ref<YearGroup[]>,
-  itemWidth: number, // Base item width (will be scaled relative to screen size)
+  itemWidth: number,
   scrollX: Ref<number>,
   categoryFilter: Ref<Record<string, boolean>>,
   wrapText: (
@@ -18,12 +18,12 @@ export function createDrawCanvas(
     lineHeight: number,
   ) => number,
 ) {
-  // Constant used for tweaking width (remains small)
+  // Original constant used for adjusting the width of each item.
   const EFFECTIVE_WIDTH_OFFSET = 2
 
   // Base design constants (for a standard reference screen).
   // These values will be multiplied by the global scale factor.
-  const REFERENCE_SINGLE_ITEM_HEIGHT = 360 // The fixed height for a single item (before scaling)
+  const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // The fixed height for a single item (before scaling)
   const REFERENCE_MULTI_ITEM_UNIT = 90 // Unit height per row if 4 items were stacked.
   const REFERENCE_MULTI_ITEM_GAP = 4 // Gap between items in a multi-item stack.
   const REFERENCE_TEXT_MARGIN = 5
@@ -31,7 +31,7 @@ export function createDrawCanvas(
   const REFERENCE_LINE_HEIGHT_MULTIPLIER = 20
   const REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET = 30
   const MIN_SCREEN_WIDTH = 320
-  const REFERENCE_MAX_SCREEN_WIDTH = 1920 // Upper bound reference
+  const REFERENCE_MAX_SCREEN_WIDTH = 1920 // We'll use this as the upper bound reference
 
   // Transition and arrow constants (will be scaled too)
   const REFERENCE_FADE_INITIAL_SCALE = 0.5
@@ -45,7 +45,7 @@ export function createDrawCanvas(
   const fadeProgress = new Map<string, number>()
 
   // A scale factor based on the current canvasWidth.
-  // It clamps the current canvas width between MIN_SCREEN_WIDTH and REFERENCE_MAX_SCREEN_WIDTH,
+  // This limits the effective canvas width between MIN_SCREEN_WIDTH and REFERENCE_MAX_SCREEN_WIDTH,
   // then linearly interpolates a scale factor.
   const getScaleFactor = () => {
     const clampedWidth = Math.max(
@@ -60,7 +60,7 @@ export function createDrawCanvas(
   }
 
   // Update layout parameters.
-  // The globalScale is used to compute scaled heights and positions.
+  // We inject the globalScale into the computation so that item heights and related values scale.
   function getLayoutParams(globalScale: number) {
     const rowHeight = canvasHeight.value / 2
     const trackTopMargin = canvasHeight.value * 0.05
@@ -70,7 +70,7 @@ export function createDrawCanvas(
     // Scale the single item height.
     const singleItemHeight = REFERENCE_SINGLE_ITEM_HEIGHT * globalScale
 
-    // Scale the year lane height.
+    // Year lane height (scaled)
     const yearLaneHeight = 20 * globalScale
 
     // laneY position is computed relative to the track content height.
@@ -78,7 +78,7 @@ export function createDrawCanvas(
 
     // We want the bottom edge of our drawing area for items to align with singleItemHeight.
     // Thus, itemY is calculated such that:
-    //   itemY + singleItemHeight = laneY - 20*globalScale
+    //   itemY + singleItemHeight = laneY - 20 * globalScale
     const itemY = laneY - 20 * globalScale - singleItemHeight
 
     return {
@@ -94,10 +94,13 @@ export function createDrawCanvas(
   }
 
   // Update fade progress with scaled translate values.
+  // Now, if an item is new (or its fade progress has been cleared), it will start at 0.
   const updateFadeProgress = (itemId: string) => {
+    // Increase progress up to 1
     const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + 0.01)
     fadeProgress.set(itemId, progress)
     const alpha = progress
+    // Use unscaled constants multiplied by the global scale during transformation.
     const fadeScale =
       REFERENCE_FADE_INITIAL_SCALE +
       progress * (REFERENCE_FADE_FINAL_SCALE - REFERENCE_FADE_INITIAL_SCALE)
@@ -106,8 +109,8 @@ export function createDrawCanvas(
     return { alpha, fadeScale, offsetX, offsetY }
   }
 
-  // Applies the fade transforms.
-  // Note: effectiveItemWidth is now passed in so that the translation is based on the scaled width.
+  // Applies the fade transforms. The translation values are scaled using globalScale.
+  // effectiveItemWidth is passed to compute transform relative to the right edge.
   const applyFadeTransform = (
     ctx: CanvasRenderingContext2D,
     fadeScale: number,
@@ -122,7 +125,6 @@ export function createDrawCanvas(
     ctx.translate(offsetX * globalScale, offsetY * globalScale)
   }
 
-  // Clip text with ellipsis if it exceeds maxWidth.
   const clipText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string => {
     let txt = text || ''
     if (ctx.measureText(txt).width <= maxWidth) return txt
@@ -132,7 +134,6 @@ export function createDrawCanvas(
     return txt + '...'
   }
 
-  // Draw a rectangle with text inside it.
   const drawRectWithText = (
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -165,7 +166,7 @@ export function createDrawCanvas(
   }
 
   // Draw track for items; scales heights and spacing based on globalScale.
-  // The effectiveItemWidth is now passed as a parameter.
+  // effectiveItemWidth is used for all horizontal calculations.
   const drawTrack = (
     ctx: CanvasRenderingContext2D,
     items: { id: string; tamil_heading?: string; english_heading?: string }[],
@@ -232,7 +233,7 @@ export function createDrawCanvas(
     ctx.restore()
   }
 
-  // Draw the year labels. The effectiveItemWidth is passed so that positions are relative.
+  // Draw the year labels. effectiveItemWidth is used for positioning.
   const drawYearElements = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
@@ -273,7 +274,7 @@ export function createDrawCanvas(
     })
   }
 
-  // Draw the arrow indicators (their positions and sizes are scaled).
+  // Draw the arrow indicators. Their positions and sizes are scaled.
   const drawArrowIndicators = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
@@ -304,14 +305,13 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Compute the global scale based on current canvas width.
+    // Compute the global scale based on the current canvas width.
     const globalScale = getScaleFactor()
-    // Compute the effective item width relative to the screen size.
+    // Compute the effective item width relative to screen size.
     const effectiveItemWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
-    // Get layout parameters using the current scale.
+    // Get layout parameters.
     const layout = getLayoutParams(globalScale)
 
-    // Clear the canvas.
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
 
     let flatColumnIndex = 0
@@ -319,7 +319,7 @@ export function createDrawCanvas(
       yearGroup.groups.forEach((groupColumn) => {
         const x = flatColumnIndex * effectiveItemWidth - scrollX.value
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
-          // Draw the Tamil track.
+          // Group is in viewport – draw tracks.
           drawTrack(
             ctx,
             groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
@@ -330,7 +330,6 @@ export function createDrawCanvas(
             effectiveItemWidth,
             (item) => item.tamil_heading || '',
           )
-          // Draw the English (world) track.
           drawTrack(
             ctx,
             groupColumn.world.map((item) => ({ ...item, id: String(item.id) })),
@@ -341,6 +340,10 @@ export function createDrawCanvas(
             effectiveItemWidth,
             (item) => item.english_heading || '',
           )
+        } else {
+          // Group is out-of-viewport – remove fade progress so fade will restart when it re-enters.
+          groupColumn.tamil.forEach((item) => fadeProgress.delete(String(item.id)))
+          groupColumn.world.forEach((item) => fadeProgress.delete(String(item.id)))
         }
         flatColumnIndex++
       })
