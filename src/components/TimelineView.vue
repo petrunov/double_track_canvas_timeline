@@ -86,13 +86,12 @@ export default defineComponent({
 
     // --- Data and Items ---
     const items = ref<Item[]>([])
-    // New ref for grouped items by year.
     const groupedItems = ref<YearGroup[]>([])
     const totalContentWidth = computed(() => items.value.length * itemWidth)
 
     // --- Canvas dimensions ---
     const canvasWidth = ref(window.innerWidth)
-    const canvasHeight = ref(window.innerHeight - 90)
+    const canvasHeight = ref(window.innerHeight - 90) // adjusted so canvas doesn't overlap minimap
 
     // --- Minimap State ---
     const minimap = ref<HTMLElement | null>(null)
@@ -156,8 +155,8 @@ export default defineComponent({
     }
 
     // --- Create the drawing function using our separated module ---
-    // Notice we now pass groupedItems (instead of items) to drawCanvas.
-    const { drawCanvas, cancelAnimation } = createDrawCanvas(
+    // Note that we pass minimapWidth.value (as a number) so that createDrawCanvas can compute indicator geometry.
+    const { drawCanvas, cancelAnimation, updateTransforms } = createDrawCanvas(
       scrollCanvas,
       canvasWidth,
       canvasHeight,
@@ -166,6 +165,7 @@ export default defineComponent({
       scrollX,
       categoryFilter,
       wrapText,
+      minimapWidth.value,
     )
 
     // --- Update Canvas & Minimap dimensions ---
@@ -177,7 +177,12 @@ export default defineComponent({
         scrollCanvas.value.width = canvasWidth.value
         scrollCanvas.value.height = canvasHeight.value
       }
-      updateTransforms()
+      // Update indicator geometry based on current scroll.
+      const { indicatorWidth, indicatorLeft } = updateTransforms()
+      minimapIndicatorStyle.value = {
+        width: indicatorWidth + 'px',
+        left: indicatorLeft + 'px',
+      }
     }
 
     // --- Custom smooth scroll (updates scrollX) ---
@@ -190,7 +195,11 @@ export default defineComponent({
         const t = Math.min(elapsed / duration, 1)
         const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
         scrollX.value = startScroll + (targetScroll - startScroll) * eased
-        updateTransforms()
+        const { indicatorWidth, indicatorLeft } = updateTransforms()
+        minimapIndicatorStyle.value = {
+          width: indicatorWidth + 'px',
+          left: indicatorLeft + 'px',
+        }
         if (t < 1) {
           requestAnimationFrame(animate)
         }
@@ -204,7 +213,11 @@ export default defineComponent({
       const scrollStep = 1
       const newScroll = scrollX.value + e.deltaY * scrollStep
       scrollX.value = Math.max(0, Math.min(newScroll, totalContentWidth.value - canvasWidth.value))
-      updateTransforms()
+      const { indicatorWidth, indicatorLeft } = updateTransforms()
+      minimapIndicatorStyle.value = {
+        width: indicatorWidth + 'px',
+        left: indicatorLeft + 'px',
+      }
     }
 
     // --- Dragging the canvas ---
@@ -222,26 +235,15 @@ export default defineComponent({
         0,
         Math.min(dragScrollStart - dx, totalContentWidth.value - canvasWidth.value),
       )
-      updateTransforms()
-    }
-    const onMouseUp = () => {
-      isDragging.value = false
-      document.body.classList.remove('no-select')
-    }
-
-    // --- Syncing Minimap indicator ---
-    const updateTransforms = () => {
-      if (isIndicatorDragging.value) return
-      const viewportWidth = canvasWidth.value
-      const totalWidth = totalContentWidth.value
-      const indicatorWidth = Math.max((viewportWidth / totalWidth) * minimapWidth.value, 10)
-      const maxScroll = totalWidth - viewportWidth
-      const maxIndicatorTravel = minimapWidth.value - indicatorWidth
-      const indicatorLeft = (scrollX.value / maxScroll) * maxIndicatorTravel - indicatorWidth / 2
+      const { indicatorWidth, indicatorLeft } = updateTransforms()
       minimapIndicatorStyle.value = {
         width: indicatorWidth + 'px',
         left: indicatorLeft + 'px',
       }
+    }
+    const onMouseUp = () => {
+      isDragging.value = false
+      document.body.classList.remove('no-select')
     }
 
     // --- Get scroll position for a target year ---
@@ -300,7 +302,11 @@ export default defineComponent({
       const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
       const targetScroll = getScrollPositionForYear(targetYear)
       scrollX.value = targetScroll
-      updateTransforms()
+      const { indicatorWidth: newWidth, indicatorLeft: newLeft } = updateTransforms()
+      minimapIndicatorStyle.value = {
+        width: newWidth + 'px',
+        left: newLeft + 'px',
+      }
     }
     const onMinimapIndicatorMouseUp = () => {
       isIndicatorDragging.value = false
@@ -333,8 +339,211 @@ export default defineComponent({
       customSmoothScrollTo(targetScroll, 500)
     }
 
+    // --- Timeline Ticks (unchanged from before) ---
+    const timelineTicks = computed(() => {
+      // Use fixed left/right margins.
+      const leftMargin = 20,
+        rightMargin = 20
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
+
+      // Choose a fixed spacing for ticks; here we set tickSpacing to 5px,
+      // which will produce twice as many ticks as a 10px spacing.
+      const tickSpacing = 15
+      const tickCount = Math.floor(availableWidth / tickSpacing) + 1
+      const ticks = []
+
+      for (let i = 0; i < tickCount; i++) {
+        const left = leftMargin + i * tickSpacing
+        // All ticks are the same style (e.g., 'minor').
+        ticks.push({ left, type: 'minor' })
+      }
+
+      return ticks
+    })
+
+    // --- Color palette for minimap items ---
+    const colorPalette = [
+      '#f44336',
+      '#e91e63',
+      '#9c27b0',
+      '#2196f3',
+      '#4caf50',
+      '#ff9800',
+      '#795548',
+    ]
+
+    // --- Minimap Rectangles (using ratio-based horizontal positioning) ---
+    const minimapRectangles = computed(() => {
+      if (!groupedItems.value || groupedItems.value.length === 0) return []
+
+      const minimapItemWidth = 5 // fixed width in pixels
+      const gap = 1 // gap between rectangles (if needed)
+      const leftMargin = 2 // left margin for minimap rectangles
+      const timescaleHeight = 20 // timescale height at the top
+      const minimapTotalHeight = 75 // total height for the minimap container
+
+      const trackAreaHeight = minimapTotalHeight - timescaleHeight
+      const trackHeight = trackAreaHeight / 2 // each track gets half
+      const rowCount = 6 // number of rows in each track (as used previously)
+      const rowHeight = trackHeight / rowCount // height for each row
+      const rectHeight = 1.5 // fixed rectangle height
+
+      const rectangles: Array<{
+        left: number
+        top: number
+        width: number
+        height: number
+        color: string
+        title: string
+        category: string
+      }> = []
+
+      let flatColumnIndex = 0
+
+      // Horizontal mapping
+      let totalColumns = 0
+      groupedItems.value.forEach((yg) => {
+        totalColumns += yg.groups.length
+      })
+      const EFFECTIVE_WIDTH_OFFSET = 2
+      const effectiveItemWidth = itemWidth + EFFECTIVE_WIDTH_OFFSET // no extra scaling in the minimap
+      const fullTimelineWidth = totalColumns * effectiveItemWidth
+
+      // Process each group (column) of grouped items.
+      groupedItems.value.forEach((yearGroup) => {
+        yearGroup.groups.forEach((groupColumn) => {
+          const rawX = flatColumnIndex * effectiveItemWidth
+          const minimapX =
+            leftMargin + (rawX / fullTimelineWidth) * (minimapWidth.value - 2 * leftMargin)
+
+          // --- Tamil Track (upper track) ---
+          // Calculate inversion: if there are fewer items, push them to the bottom.
+          groupColumn.tamil.forEach((item, rowIndex) => {
+            const totalItems = groupColumn.tamil.length // number of items in this column
+            const invertedRow = rowCount - totalItems + rowIndex
+            const top = timescaleHeight + invertedRow * rowHeight - 10
+            rectangles.push({
+              left: minimapX,
+              top,
+              width: minimapItemWidth,
+              height: rectHeight,
+              color: (function () {
+                const keys = Object.keys(categoryFilter.value).sort()
+                const index = keys.indexOf(item.category)
+                return colorPalette[index % colorPalette.length]
+              })(),
+              title: item.tamil_heading,
+              category: item.category,
+            })
+          })
+
+          // --- World Track (lower track) ---
+          groupColumn.world.forEach((item, rowIndex) => {
+            const totalItems = groupColumn.world.length
+            const invertedRow = rowCount - totalItems + rowIndex
+            const top = timescaleHeight + invertedRow * rowHeight + 10
+            rectangles.push({
+              left: minimapX,
+              top,
+              width: minimapItemWidth,
+              height: rectHeight,
+              color: (function () {
+                const keys = Object.keys(categoryFilter.value).sort()
+                const index = keys.indexOf(item.category)
+                return colorPalette[index % colorPalette.length]
+              })(),
+              title: item.english_heading,
+              category: item.category,
+            })
+          })
+
+          flatColumnIndex++
+        })
+      })
+
+      return rectangles
+    })
+
+    // --- Touch Handlers for dragging the canvas ---
+    const onTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
+      isDragging.value = true
+      dragStartX = touch.clientX
+      dragScrollStart = scrollX.value
+      document.body.classList.add('no-select')
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isDragging.value) return
+      const touch = e.touches[0]
+      const dx = touch.clientX - dragStartX
+      scrollX.value = Math.max(
+        0,
+        Math.min(dragScrollStart - dx, totalContentWidth.value - canvasWidth.value),
+      )
+      const { indicatorWidth, indicatorLeft } = updateTransforms()
+      minimapIndicatorStyle.value = { width: indicatorWidth + 'px', left: indicatorLeft + 'px' }
+    }
+    const onTouchEnd = () => {
+      isDragging.value = false
+      document.body.classList.remove('no-select')
+    }
+
+    const onMinimapIndicatorTouchStart = (e: TouchEvent) => {
+      e.stopPropagation()
+      isIndicatorDragging.value = true
+      indicatorDragStartX = e.touches[0].clientX
+      indicatorDragged = false
+      document.addEventListener('touchmove', onMinimapIndicatorTouchMove)
+      document.addEventListener('touchend', onMinimapIndicatorTouchEnd)
+      document.body.classList.add('no-select')
+    }
+    const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
+      if (!isIndicatorDragging.value) return
+      e.preventDefault()
+      const touch = e.touches[0]
+      if (!indicatorDragged && Math.abs(touch.clientX - indicatorDragStartX) > 5) {
+        indicatorDragged = true
+      }
+      const leftMargin = 20,
+        rightMargin = 20
+      const availableWidth = minimapWidth.value - leftMargin - rightMargin
+      const containerRect = (
+        document.querySelector('.minimap-container') as HTMLElement
+      ).getBoundingClientRect()
+      const indicatorWidth = Math.max(
+        (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
+        10,
+      )
+      let newCenter = touch.clientX - containerRect.left - leftMargin
+      newCenter = Math.max(
+        indicatorWidth / 2,
+        Math.min(newCenter, availableWidth - indicatorWidth / 2),
+      )
+      const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
+      minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
+      minimapIndicatorStyle.value.width = indicatorWidth + 'px'
+      const years = items.value.map((item) => Number(item.year_ce))
+      const minYear = Math.min(...years)
+      const maxYear = Math.max(...years)
+      const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
+      const targetScroll = getScrollPositionForYear(targetYear)
+      scrollX.value = targetScroll
+      const { indicatorWidth: newWidth, indicatorLeft: newLeft } = updateTransforms()
+      minimapIndicatorStyle.value = {
+        width: newWidth + 'px',
+        left: newLeft + 'px',
+      }
+    }
+    const onMinimapIndicatorTouchEnd = () => {
+      isIndicatorDragging.value = false
+      document.removeEventListener('touchmove', onMinimapIndicatorTouchMove)
+      document.removeEventListener('touchend', onMinimapIndicatorTouchEnd)
+      document.body.classList.remove('no-select')
+    }
+
     onMounted(async () => {
-      // getItems now returns both items and groupedItems
+      // getItems now returns both items and groupedItems.
       const result = await getItems()
       items.value = result.items
       groupedItems.value = result.groupedItems
@@ -378,204 +587,6 @@ export default defineComponent({
       cancelAnimation()
     })
 
-    // --- Timeline Ticks & Minimap Rectangles (same as before) ---
-    const timelineTicks = computed(() => {
-      // Define left/right margins for the tick area.
-      const leftMargin = 20
-      const rightMargin = 20
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      // Choose a spacing in pixels between ticks.
-      const tickSpacing = 5 // This produces a dense set of ticks.
-      // Calculate how many ticks will fit.
-      const tickCount = Math.floor(availableWidth / tickSpacing) + 1
-
-      const ticks = []
-      for (let i = 0; i < tickCount; i++) {
-        const left = leftMargin + i * tickSpacing
-        // Determine type: major every 10 ticks, medium every 5 ticks, otherwise minor.
-        let type: 'major' | 'medium' | 'minor' = 'minor'
-        if (i % 10 === 0) {
-          type = 'major'
-        } else if (i % 5 === 0) {
-          type = 'medium'
-        }
-        ticks.push({ left, type })
-      }
-      return ticks
-    })
-
-    const colorPalette = [
-      '#f44336',
-      '#e91e63',
-      '#9c27b0',
-      '#2196f3',
-      '#4caf50',
-      '#ff9800',
-      '#795548',
-    ]
-
-    const minimapRectangles = computed(() => {
-      // If no grouped data is available, return an empty array.
-      if (!groupedItems.value || groupedItems.value.length === 0) return []
-
-      // Fixed constants for minimap layout.
-      const minimapItemWidth = 5 // Fixed width (in pixels) for each item.
-      const gap = 1 // Gap between minimap rectangles.
-      const leftMargin = 20 // Left margin as before.
-      const timescaleHeight = 20 // Height for the timescale (unchanged from your CSS).
-      const minimapTotalHeight = 75 // Total height of the minimap container (as defined in CSS).
-
-      // The minimap is now divided into two tracks (Tamil and World) below the timescale.
-      // Each track gets half of the remaining height.
-      const trackAreaHeight = minimapTotalHeight - timescaleHeight // e.g. 50 - 20 = 30px
-      const trackHeight = trackAreaHeight / 2 // Height of each track (e.g. 15px)
-      // Each track is then subdivided into 4 rows.
-      const rowHeight = trackHeight / 6 // Height for each row.
-
-      // Helper function: choose a color for a category using a sorted list from categoryFilter.
-      const getCategoryColor = (category: string): string => {
-        const keys = Object.keys(categoryFilter.value).sort()
-        const index = keys.indexOf(category)
-        return colorPalette[index % colorPalette.length]
-      }
-
-      // Build the minimap rectangles.
-      const rectangles: Array<{
-        left: number
-        top: number
-        width: number
-        height: number
-        color: string
-        title: string
-        category: string
-      }> = []
-      let flatColumnIndex = 0
-
-      // Loop over each year group and then each group (column) in that year.
-      groupedItems.value.forEach((yearGroup) => {
-        yearGroup.groups.forEach((groupColumn) => {
-          // Compute ratio-based horizontal position:
-          let totalColumns = 0
-          groupedItems.value.forEach((yg) => {
-            totalColumns += yg.groups.length
-          })
-          const EFFECTIVE_WIDTH_OFFSET = 2
-          const effectiveItemWidth = itemWidth + EFFECTIVE_WIDTH_OFFSET // assuming globalScale === 1 for minimap
-          const fullTimelineWidth = totalColumns * effectiveItemWidth
-          const rawX = flatColumnIndex * effectiveItemWidth
-          const minimapX =
-            leftMargin + (rawX / fullTimelineWidth) * (minimapWidth.value - 2 * leftMargin)
-
-          // Then use minimapX as the left position for all rectangles in this column:
-          groupColumn.tamil.forEach((item, rowIndex) => {
-            // Calculate vertical position as before…
-            const top = timescaleHeight + rowIndex * rowHeight + 10 // (example calculation)
-            rectangles.push({
-              left: minimapX,
-              top,
-              width: minimapItemWidth,
-              height: 2,
-              color: getCategoryColor(item.category),
-              title: item.tamil_heading,
-              category: item.category,
-            })
-          })
-
-          // And do similarly for groupColumn.world…
-          groupColumn.world.forEach((item, rowIndex) => {
-            const top = timescaleHeight + trackHeight + rowIndex * rowHeight
-            rectangles.push({
-              left: minimapX,
-              top,
-              width: minimapItemWidth,
-              height: 2,
-              color: getCategoryColor(item.category),
-              title: item.english_heading,
-              category: item.category,
-            })
-          })
-
-          flatColumnIndex++
-        })
-      })
-
-      return rectangles
-    })
-
-    // --- Touch handlers for dragging the canvas ---
-    const onTouchStart = (e: TouchEvent) => {
-      const touch = e.touches[0]
-      if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
-      isDragging.value = true
-      dragStartX = touch.clientX
-      dragScrollStart = scrollX.value
-      document.body.classList.add('no-select')
-    }
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isDragging.value) return
-      const touch = e.touches[0]
-      const dx = touch.clientX - dragStartX
-      scrollX.value = Math.max(
-        0,
-        Math.min(dragScrollStart - dx, totalContentWidth.value - canvasWidth.value),
-      )
-      updateTransforms()
-    }
-    const onTouchEnd = () => {
-      isDragging.value = false
-      document.body.classList.remove('no-select')
-    }
-
-    // --- Touch handlers for the minimap indicator drag ---
-    const onMinimapIndicatorTouchStart = (e: TouchEvent) => {
-      e.stopPropagation()
-      isIndicatorDragging.value = true
-      indicatorDragStartX = e.touches[0].clientX
-      indicatorDragged = false
-      document.addEventListener('touchmove', onMinimapIndicatorTouchMove)
-      document.addEventListener('touchend', onMinimapIndicatorTouchEnd)
-      document.body.classList.add('no-select')
-    }
-    const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
-      if (!isIndicatorDragging.value) return
-      e.preventDefault()
-      const touch = e.touches[0]
-      if (!indicatorDragged && Math.abs(touch.clientX - indicatorDragStartX) > 5) {
-        indicatorDragged = true
-      }
-      const leftMargin = 20,
-        rightMargin = 20
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const containerRect = (
-        document.querySelector('.minimap-container') as HTMLElement
-      ).getBoundingClientRect()
-      const indicatorWidth = Math.max(
-        (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
-        10,
-      )
-      let newCenter = touch.clientX - containerRect.left - leftMargin
-      newCenter = Math.max(
-        indicatorWidth / 2,
-        Math.min(newCenter, availableWidth - indicatorWidth / 2),
-      )
-      const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
-      minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
-      minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
-      const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
-      const targetScroll = getScrollPositionForYear(targetYear)
-      scrollX.value = targetScroll
-      updateTransforms()
-    }
-    const onMinimapIndicatorTouchEnd = () => {
-      isIndicatorDragging.value = false
-      document.removeEventListener('touchmove', onMinimapIndicatorTouchMove)
-      document.removeEventListener('touchend', onMinimapIndicatorTouchEnd)
-      document.body.classList.remove('no-select')
-    }
-
     return {
       items,
       groupedItems,
@@ -598,7 +609,6 @@ export default defineComponent({
 </script>
 
 <style scoped>
-/* (Styles remain unchanged) */
 * {
   user-select: none !important;
 }
@@ -635,7 +645,6 @@ export default defineComponent({
 .minimap-container::-webkit-scrollbar {
   display: none;
 }
-
 .minimap-timescale {
   position: absolute;
   top: 0;
@@ -669,7 +678,6 @@ export default defineComponent({
   position: relative;
   left: -50%;
 }
-
 .minimap-rectangle {
   position: absolute;
 }

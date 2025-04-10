@@ -1,3 +1,4 @@
+// src/utils/createDrawCanvas.ts
 import type { Ref } from 'vue'
 import type { YearGroup } from '@/services/dataService'
 
@@ -17,43 +18,19 @@ export function createDrawCanvas(
     maxWidth: number,
     lineHeight: number,
   ) => number,
-) {
-  // Constant used for adjusting the width of each item.
+  minimapWidth: number, // passed as a number for indicator calculations
+): {
+  drawCanvas: () => void
+  cancelAnimation: () => void
+  updateTransforms: () => { indicatorWidth: number; indicatorLeft: number }
+} {
+  // --- Constants & Helper Definitions ---
   const EFFECTIVE_WIDTH_OFFSET = 2
-
-  // Base design constants (for a standard reference screen).
-  // These values will be multiplied by the global scale factor.
-  const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // Fixed height for a single item (before scaling)
-  const REFERENCE_MULTI_ITEM_UNIT = 90 // Unit height per row if items were stacked.
-  const REFERENCE_MULTI_ITEM_GAP = 4 // Gap between items in a multi-item stack.
-  const REFERENCE_TEXT_MARGIN = 5
-  const REFERENCE_BASE_FONT_SIZE = 14
-  const REFERENCE_LINE_HEIGHT_MULTIPLIER = 20
-  const REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET = 30
+  const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // For a single item before scaling
   const MIN_SCREEN_WIDTH = 320
-  const REFERENCE_MAX_SCREEN_WIDTH = 1920 // Upper bound reference
+  const REFERENCE_MAX_SCREEN_WIDTH = 1920
 
-  // Transition and arrow constants (will be scaled too)
-  const REFERENCE_FADE_INITIAL_SCALE = 0.5
-  const REFERENCE_FADE_FINAL_SCALE = 1.0
-  const REFERENCE_FADE_TRANSLATE_X = 20
-  const REFERENCE_FADE_TRANSLATE_Y = 30
-  const REFERENCE_ARROW_WIDTH = 20
-  const REFERENCE_ARROW_HEIGHT = 10
-
-  // Color palette for category indicators.
-  const colorPalette = ['#f44336', '#e91e63', '#9c27b0', '#2196f3', '#4caf50', '#ff9800', '#795548']
-  // Helper: return a color for a given category using sorted keys.
-  const getCategoryColor = (category: string): string => {
-    const keys = Object.keys(categoryFilter.value).sort()
-    const index = keys.indexOf(category)
-    return colorPalette[index % colorPalette.length]
-  }
-
-  // Map to keep fade progress per item.
-  const fadeProgress = new Map<string, number>()
-
-  // Compute a scale factor based on the current canvasWidth.
+  // Helper: calculate the global scale factor based on canvasWidth.
   const getScaleFactor = () => {
     const clampedWidth = Math.max(
       MIN_SCREEN_WIDTH,
@@ -61,12 +38,12 @@ export function createDrawCanvas(
     )
     const ratio =
       (clampedWidth - MIN_SCREEN_WIDTH) / (REFERENCE_MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
-    const MIN_SCALE = 0.8
-    const MAX_SCALE = 1.2
+    const MIN_SCALE = 0.8,
+      MAX_SCALE = 1.2
     return MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
   }
 
-  // Layout parameters calculated from the global scale.
+  // --- Define layout parameters based on canvas dimensions and scale.
   function getLayoutParams(globalScale: number) {
     const rowHeight = canvasHeight.value / 2
     const trackTopMargin = canvasHeight.value * 0.05
@@ -90,11 +67,16 @@ export function createDrawCanvas(
     }
   }
 
-  // Update fade progress for an item.
+  // --- Fade Progress Helpers ---
+  const fadeProgress = new Map<string, number>()
   const updateFadeProgress = (itemId: string) => {
     const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + 0.01)
     fadeProgress.set(itemId, progress)
     const alpha = progress
+    const REFERENCE_FADE_INITIAL_SCALE = 0.5
+    const REFERENCE_FADE_FINAL_SCALE = 1.0
+    const REFERENCE_FADE_TRANSLATE_X = 20
+    const REFERENCE_FADE_TRANSLATE_Y = 30
     const fadeScale =
       REFERENCE_FADE_INITIAL_SCALE +
       progress * (REFERENCE_FADE_FINAL_SCALE - REFERENCE_FADE_INITIAL_SCALE)
@@ -103,7 +85,6 @@ export function createDrawCanvas(
     return { alpha, fadeScale, offsetX, offsetY }
   }
 
-  // Apply fade transforms.
   const applyFadeTransform = (
     ctx: CanvasRenderingContext2D,
     fadeScale: number,
@@ -137,6 +118,10 @@ export function createDrawCanvas(
     globalScale: number,
     isMulti: boolean,
   ) => {
+    const REFERENCE_TEXT_MARGIN = 5
+    const REFERENCE_BASE_FONT_SIZE = 14
+    const REFERENCE_LINE_HEIGHT_MULTIPLIER = 20
+    const REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET = 30
     ctx.fillStyle = 'rgba(255,255,255,0.8)'
     ctx.fillRect(x, y, width, height)
     ctx.fillStyle = '#000'
@@ -158,7 +143,7 @@ export function createDrawCanvas(
     }
   }
 
-  // Draw track for items; applies fade in effect to all sub-elements.
+  // --- Draw a Track of Items ---
   const drawTrack = (
     ctx: CanvasRenderingContext2D,
     items: { id: string; tamil_heading?: string; english_heading?: string; category?: string }[],
@@ -174,18 +159,13 @@ export function createDrawCanvas(
     ctx.save()
     ctx.translate(offsetX, offsetY)
 
-    // Helper to draw one item with fade in for all elements.
     const drawOneItem = (item: any, y: number, rectHeight: number) => {
-      // Check category visibility.
       const visible = categoryFilter.value[item.category || ''] !== false
       const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
       const effectiveAlpha = visible ? alpha : 0
-
-      // Group all drawing with same fade effect.
       ctx.save()
       ctx.globalAlpha = effectiveAlpha
       applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
-      // Draw main item (background + text)
       drawRectWithText(
         ctx,
         getTitle(item),
@@ -196,8 +176,23 @@ export function createDrawCanvas(
         globalScale,
         items.length > 1,
       )
-      // Draw top category indicator with same fade in.
+      // Draw the top category indicator
       const topIndicatorHeight = 5 * globalScale
+      const getCategoryColor = (category: string): string => {
+        const keys = Object.keys(categoryFilter.value).sort()
+        console.log(keys)
+        const index = keys.indexOf(category)
+        const colorPalette = [
+          '#f44336',
+          '#e91e63',
+          '#9c27b0',
+          '#2196f3',
+          '#4caf50',
+          '#ff9800',
+          '#795548',
+        ]
+        return colorPalette[index % colorPalette.length]
+      }
       ctx.fillStyle = getCategoryColor(item.category || '')
       ctx.fillRect(0, y, effectiveItemWidth - 10, topIndicatorHeight)
       ctx.restore()
@@ -205,9 +200,10 @@ export function createDrawCanvas(
 
     if (items.length === 1) {
       const y = layout.itemY
-      const item = items[0]
-      drawOneItem(item, y, layout.singleItemHeight)
+      drawOneItem(items[0], y, layout.singleItemHeight)
     } else {
+      const REFERENCE_MULTI_ITEM_UNIT = 90
+      const REFERENCE_MULTI_ITEM_GAP = 4
       const multiItemUnit = REFERENCE_MULTI_ITEM_UNIT * globalScale
       const multiItemGap = REFERENCE_MULTI_ITEM_GAP * globalScale
       const totalMultiHeight = items.length * multiItemUnit
@@ -222,16 +218,19 @@ export function createDrawCanvas(
     ctx.restore()
   }
 
-  // Draw the year labels.
+  // --- Draw Year Elements (Tracks with Year Labels) ---
   const drawYearElements = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
     globalScale: number,
     effectiveItemWidth: number,
   ) => {
+    // For example, draw a white rectangle for the lane(s) in which the years are drawn.
     ctx.save()
     ctx.fillStyle = 'white'
+    // Draw a background lane for the top year label.
     ctx.fillRect(0, layout.laneY, canvasWidth.value, layout.yearLaneHeight)
+    // Draw a second lane below for a secondary label if needed.
     ctx.translate(0, layout.rowHeight)
     ctx.fillRect(0, layout.laneY, canvasWidth.value, layout.yearLaneHeight)
     ctx.restore()
@@ -240,17 +239,20 @@ export function createDrawCanvas(
     groupedItems.value.forEach(({ year, groups }) => {
       groups.forEach(() => {
         const x = flatIndex * effectiveItemWidth - scrollX.value
+        // Only draw if within the current viewport:
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
           ctx.save()
-          ctx.font = `${REFERENCE_BASE_FONT_SIZE * globalScale}px sans-serif`
+          ctx.font = `bold ${14 * globalScale}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
           ctx.fillStyle = '#000'
+          // Draw the primary year label in the top lane.
           ctx.fillText(
             `${year}`,
             x + (effectiveItemWidth - 10) / 2,
             layout.laneY + layout.yearLaneHeight / 2,
           )
+          // Optionally draw a secondary label in the bottom lane.
           ctx.fillText(
             `${year} C.E.`,
             x + (effectiveItemWidth - 10) / 2,
@@ -263,13 +265,15 @@ export function createDrawCanvas(
     })
   }
 
-  // Draw arrow indicators.
+  // --- Draw Arrow Indicators ---
   const drawArrowIndicators = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
     globalScale: number,
   ) => {
     const centerX = canvasWidth.value / 2
+    const REFERENCE_ARROW_WIDTH = 20
+    const REFERENCE_ARROW_HEIGHT = 10
     const arrowWidth = REFERENCE_ARROW_WIDTH * globalScale
     const arrowHeight = REFERENCE_ARROW_HEIGHT * globalScale
 
@@ -283,6 +287,7 @@ export function createDrawCanvas(
     }
     ctx.save()
     ctx.fillStyle = 'white'
+    // Draw arrows for each lane (adjust vertical offsets as needed)
     drawArrow(layout.laneY + layout.yearLaneHeight / 2 - 14 * globalScale)
     drawArrow(layout.rowHeight + layout.laneY + layout.yearLaneHeight / 2 - 14 * globalScale)
     ctx.restore()
@@ -294,26 +299,18 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Compute global scale and effective width.
     const globalScale = getScaleFactor()
     const effectiveItemWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
 
-    // Calculate total columns and maximum scroll offset.
-    const totalColumns = groupedItems.value.reduce(
-      (sum, yearGroup) => sum + yearGroup.groups.length,
-      0,
-    )
-    const totalContentWidth = totalColumns * effectiveItemWidth
-    const maxScrollX = Math.max(0, totalContentWidth - canvasWidth.value)
-    // Clamp the scrollX value so it stays within bounds.
-    if (scrollX.value < 0) {
-      scrollX.value = 0
-    } else if (scrollX.value > maxScrollX) {
-      scrollX.value = maxScrollX
-    }
+    // Calculate total columns and full timeline width.
+    const totalColumns = groupedItems.value.reduce((sum, yg) => sum + yg.groups.length, 0)
+    const timelineFullWidth = totalColumns * effectiveItemWidth
+
+    const maxScrollX = Math.max(0, timelineFullWidth - canvasWidth.value)
+    if (scrollX.value < 0) scrollX.value = 0
+    else if (scrollX.value > maxScrollX) scrollX.value = maxScrollX
 
     const layout = getLayoutParams(globalScale)
-
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
 
     let flatColumnIndex = 0
@@ -349,14 +346,35 @@ export function createDrawCanvas(
       })
     })
 
+    // Draw the year lanes and labels.
     drawYearElements(ctx, layout, globalScale, effectiveItemWidth)
+    // Draw arrow indicators.
     drawArrowIndicators(ctx, layout, globalScale)
 
     animationFrameId = requestAnimationFrame(drawCanvas)
   }
 
+  // --- Update Transforms for the Minimap Indicator ---
+  const updateTransforms = () => {
+    const scale = getScaleFactor()
+    const totalColumns = groupedItems.value.reduce((sum, yg) => sum + yg.groups.length, 0)
+    const effectiveItemWidth = itemWidth * scale + EFFECTIVE_WIDTH_OFFSET
+    const timelineFullWidth = totalColumns * effectiveItemWidth
+    const viewportWidth = canvasWidth.value
+    let indicatorWidth = (viewportWidth / timelineFullWidth) * minimapWidth
+    const minIndicatorWidth = 10
+    if (indicatorWidth < minIndicatorWidth) indicatorWidth = minIndicatorWidth
+
+    const leftMargin = 20
+    const availableMinimapWidth = minimapWidth - 2 * leftMargin
+    const indicatorLeft = leftMargin + (scrollX.value / timelineFullWidth) * availableMinimapWidth
+
+    return { indicatorWidth, indicatorLeft }
+  }
+
   return {
     drawCanvas,
     cancelAnimation: () => cancelAnimationFrame(animationFrameId),
+    updateTransforms,
   }
 }

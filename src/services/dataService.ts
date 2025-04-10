@@ -20,7 +20,6 @@ export interface Item {
   category: string // normalized category name
   index: number
   date: string
-  type: string // retained from BE; not used in track determination here
 }
 
 export interface GroupColumn {
@@ -227,9 +226,51 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
       category: categoryName,
       index: Number(event.Index),
       date: event.Date || '',
-      type: event.Year_CE_Type ? event.Year_CE_Type.toString() : 'world',
     }
   })
+
+  const startingId = items[items.length - 1].id + 1
+
+  function getRandomYear(): number {
+    return Math.floor(Math.random() * (2025 - -3000 + 1)) - 3000
+  }
+
+  function getRandomCategory(): string {
+    const categories = []
+    categories[1] = 'World History'
+    categories[2] = 'Literature'
+    categories[3] = 'Archeology'
+    categories[4] = 'Rulers'
+    categories[5] = 'Achievers'
+    categories[6] = 'Awardee'
+    categories[7] = 'Laws'
+
+    console.log(Math.floor(Math.random() * 7) + 1)
+
+    return categories[Math.floor(Math.random() * 7) + 1]
+  }
+
+  for (let i = 0; i < 100; i++) {
+    const randomYear = getRandomYear()
+    const randomCategory = getRandomCategory()
+
+    const newItem: Item = {
+      id: startingId + i,
+      tamil_heading: `Random Tamil Heading ${i + 1}`,
+      english_heading: `Random English Heading ${i + 1}`,
+      year_ce: randomYear,
+      year_ta: convertToTamilVikramEra(randomYear),
+      english_long_text: `This is a randomly generated English description for item ${i + 1}`,
+      tamil_long_text: `This is a randomly generated Tamil description for item ${i + 1}`,
+      featured_image: `random-featured-image-${i}.jpg`,
+      additional_images: [],
+      category: `${randomCategory}`,
+      index: i,
+      date: `2000-01-${String((i % 31) + 1).padStart(2, '0')}`,
+    }
+
+    items.push(newItem)
+  }
 
   // Sort items by ascending CE year.
   items.sort((a, b) => a.year_ce - b.year_ce)
