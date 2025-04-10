@@ -454,29 +454,38 @@ export default defineComponent({
       // Loop over each year group and then each group (column) in that year.
       groupedItems.value.forEach((yearGroup) => {
         yearGroup.groups.forEach((groupColumn) => {
-          // Compute the left position using the flat column index.
-          const left = leftMargin + flatColumnIndex * (minimapItemWidth + gap)
+          // Compute ratio-based horizontal position:
+          let totalColumns = 0
+          groupedItems.value.forEach((yg) => {
+            totalColumns += yg.groups.length
+          })
+          const EFFECTIVE_WIDTH_OFFSET = 2
+          const effectiveItemWidth = itemWidth + EFFECTIVE_WIDTH_OFFSET // assuming globalScale === 1 for minimap
+          const fullTimelineWidth = totalColumns * effectiveItemWidth
+          const rawX = flatColumnIndex * effectiveItemWidth
+          const minimapX =
+            leftMargin + (rawX / fullTimelineWidth) * (minimapWidth.value - 2 * leftMargin)
 
-          // Draw items for the Tamil track.
+          // Then use minimapX as the left position for all rectangles in this column:
           groupColumn.tamil.forEach((item, rowIndex) => {
-            const top = timescaleHeight + rowIndex * rowHeight + 10
+            // Calculate vertical position as before…
+            const top = timescaleHeight + rowIndex * rowHeight + 10 // (example calculation)
             rectangles.push({
-              left,
+              left: minimapX,
               top,
               width: minimapItemWidth,
-              height: 2, // subtract a pixel for an optional gap
+              height: 2,
               color: getCategoryColor(item.category),
               title: item.tamil_heading,
               category: item.category,
             })
           })
 
-          // Draw items for the World track.
+          // And do similarly for groupColumn.world…
           groupColumn.world.forEach((item, rowIndex) => {
-            // For the world track, shift down by one track height.
             const top = timescaleHeight + trackHeight + rowIndex * rowHeight
             rectangles.push({
-              left,
+              left: minimapX,
               top,
               width: minimapItemWidth,
               height: 2,
