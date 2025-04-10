@@ -19,7 +19,7 @@ export function createDrawCanvas(
   ) => number,
 ) {
   const EFFECTIVE_WIDTH_OFFSET = 2
-  const GROUP_ITEM_HEIGHT = 30
+  const GROUP_ITEM_HEIGHT = 80
   const TEXT_MARGIN = 5
   const BASE_FONT_SIZE = 14
   const LINE_HEIGHT_MULTIPLIER = 20

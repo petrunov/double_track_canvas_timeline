@@ -79,7 +79,7 @@ export default defineComponent({
     // --- Canvas & Scrolling state ---
     const scrollCanvas = ref<HTMLCanvasElement | null>(null)
     const scrollX = ref(0)
-    const itemWidth = 200
+    const itemWidth = 350
     const isDragging = ref(false)
     let dragStartX = 0
     let dragScrollStart = 0
