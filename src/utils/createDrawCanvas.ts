@@ -24,7 +24,7 @@ export function createDrawCanvas(
   // Base design constants (for a standard reference screen).
   // These values will be multiplied by the global scale factor.
   const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // Fixed height for a single item (before scaling)
-  const REFERENCE_MULTI_ITEM_UNIT = 90 // Unit height per row if 4 items were stacked.
+  const REFERENCE_MULTI_ITEM_UNIT = 90 // Unit height per row if items were stacked.
   const REFERENCE_MULTI_ITEM_GAP = 4 // Gap between items in a multi-item stack.
   const REFERENCE_TEXT_MARGIN = 5
   const REFERENCE_BASE_FONT_SIZE = 14
@@ -297,6 +297,21 @@ export function createDrawCanvas(
     // Compute global scale and effective width.
     const globalScale = getScaleFactor()
     const effectiveItemWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
+
+    // Calculate total columns and maximum scroll offset.
+    const totalColumns = groupedItems.value.reduce(
+      (sum, yearGroup) => sum + yearGroup.groups.length,
+      0,
+    )
+    const totalContentWidth = totalColumns * effectiveItemWidth
+    const maxScrollX = Math.max(0, totalContentWidth - canvasWidth.value)
+    // Clamp the scrollX value so it stays within bounds.
+    if (scrollX.value < 0) {
+      scrollX.value = 0
+    } else if (scrollX.value > maxScrollX) {
+      scrollX.value = maxScrollX
+    }
+
     const layout = getLayoutParams(globalScale)
 
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)

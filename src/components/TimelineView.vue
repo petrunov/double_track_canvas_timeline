@@ -92,7 +92,7 @@ export default defineComponent({
 
     // --- Canvas dimensions ---
     const canvasWidth = ref(window.innerWidth)
-    const canvasHeight = ref(window.innerHeight - 80)
+    const canvasHeight = ref(window.innerHeight - 90)
 
     // --- Minimap State ---
     const minimap = ref<HTMLElement | null>(null)
@@ -171,7 +171,7 @@ export default defineComponent({
     // --- Update Canvas & Minimap dimensions ---
     const updateDimensions = () => {
       canvasWidth.value = window.innerWidth
-      canvasHeight.value = window.innerHeight - 80
+      canvasHeight.value = window.innerHeight - 90
       minimapWidth.value = window.innerWidth
       if (scrollCanvas.value) {
         scrollCanvas.value.width = canvasWidth.value
@@ -380,28 +380,26 @@ export default defineComponent({
 
     // --- Timeline Ticks & Minimap Rectangles (same as before) ---
     const timelineTicks = computed(() => {
-      if (!items.value.length) return []
-      const leftMargin = 20,
-        rightMargin = 20
+      // Define left/right margins for the tick area.
+      const leftMargin = 20
+      const rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
-      const span = maxYear - minYear || 1
-      const majorTickInterval = 500,
-        mediumTickInterval = 250,
-        minorTickInterval = 50
-      const startTick = Math.floor(minYear / minorTickInterval) * minorTickInterval
+      // Choose a spacing in pixels between ticks.
+      const tickSpacing = 5 // This produces a dense set of ticks.
+      // Calculate how many ticks will fit.
+      const tickCount = Math.floor(availableWidth / tickSpacing) + 1
+
       const ticks = []
-      for (let year = startTick; year <= maxYear; year += minorTickInterval) {
+      for (let i = 0; i < tickCount; i++) {
+        const left = leftMargin + i * tickSpacing
+        // Determine type: major every 10 ticks, medium every 5 ticks, otherwise minor.
         let type: 'major' | 'medium' | 'minor' = 'minor'
-        if (year % majorTickInterval === 0) {
+        if (i % 10 === 0) {
           type = 'major'
-        } else if (year % mediumTickInterval === 0) {
+        } else if (i % 5 === 0) {
           type = 'medium'
         }
-        const left = leftMargin + ((year - minYear) / span) * availableWidth
-        ticks.push({ year, left, type })
+        ticks.push({ left, type })
       }
       return ticks
     })
@@ -415,36 +413,84 @@ export default defineComponent({
       '#ff9800',
       '#795548',
     ]
-    const minimapRectangles = computed(() => {
-      if (!items.value.length) return []
-      const leftMargin = 20
-      const rightMargin = 20
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
-      const effectiveItemWidth = itemWidth + 2
-      const totalContentWidthEffective = items.value.length * effectiveItemWidth
-      const scaleFactor = availableWidth / totalContentWidthEffective
-      const timescaleHeight = 20
-      const firstTrackTop = timescaleHeight + 15
-      const secondTrackTop = firstTrackTop + 5
 
-      return items.value.map((item, index) => {
-        const x = index * effectiveItemWidth
-        const left = leftMargin + x * scaleFactor
-        const rectWidth = effectiveItemWidth * scaleFactor
-        const top = item.type === 'world' ? secondTrackTop : firstTrackTop
-        const rectHeight = 4
-        const catIndex = categories.value.indexOf(item.category)
-        const color = colorPalette[catIndex % colorPalette.length]
-        return {
-          left,
-          top,
-          width: rectWidth,
-          height: rectHeight,
-          color,
-          title: item.english_heading,
-          category: item.category,
-        }
+    const minimapRectangles = computed(() => {
+      // If no grouped data is available, return an empty array.
+      if (!groupedItems.value || groupedItems.value.length === 0) return []
+
+      // Fixed constants for minimap layout.
+      const minimapItemWidth = 5 // Fixed width (in pixels) for each item.
+      const gap = 1 // Gap between minimap rectangles.
+      const leftMargin = 20 // Left margin as before.
+      const timescaleHeight = 20 // Height for the timescale (unchanged from your CSS).
+      const minimapTotalHeight = 75 // Total height of the minimap container (as defined in CSS).
+
+      // The minimap is now divided into two tracks (Tamil and World) below the timescale.
+      // Each track gets half of the remaining height.
+      const trackAreaHeight = minimapTotalHeight - timescaleHeight // e.g. 50 - 20 = 30px
+      const trackHeight = trackAreaHeight / 2 // Height of each track (e.g. 15px)
+      // Each track is then subdivided into 4 rows.
+      const rowHeight = trackHeight / 6 // Height for each row.
+
+      // Helper function: choose a color for a category using a sorted list from categoryFilter.
+      const getCategoryColor = (category: string): string => {
+        const keys = Object.keys(categoryFilter.value).sort()
+        const index = keys.indexOf(category)
+        return colorPalette[index % colorPalette.length]
+      }
+
+      // Build the minimap rectangles.
+      const rectangles: Array<{
+        left: number
+        top: number
+        width: number
+        height: number
+        color: string
+        title: string
+        category: string
+      }> = []
+      let flatColumnIndex = 0
+
+      // Loop over each year group and then each group (column) in that year.
+      groupedItems.value.forEach((yearGroup) => {
+        yearGroup.groups.forEach((groupColumn) => {
+          // Compute the left position using the flat column index.
+          const left = leftMargin + flatColumnIndex * (minimapItemWidth + gap)
+
+          // Draw items for the Tamil track.
+          groupColumn.tamil.forEach((item, rowIndex) => {
+            const top = timescaleHeight + rowIndex * rowHeight + 10
+            rectangles.push({
+              left,
+              top,
+              width: minimapItemWidth,
+              height: 2, // subtract a pixel for an optional gap
+              color: getCategoryColor(item.category),
+              title: item.tamil_heading,
+              category: item.category,
+            })
+          })
+
+          // Draw items for the World track.
+          groupColumn.world.forEach((item, rowIndex) => {
+            // For the world track, shift down by one track height.
+            const top = timescaleHeight + trackHeight + rowIndex * rowHeight
+            rectangles.push({
+              left,
+              top,
+              width: minimapItemWidth,
+              height: 2,
+              color: getCategoryColor(item.category),
+              title: item.english_heading,
+              category: item.category,
+            })
+          })
+
+          flatColumnIndex++
+        })
       })
+
+      return rectangles
     })
 
     // --- Touch handlers for dragging the canvas ---
@@ -569,7 +615,7 @@ export default defineComponent({
   bottom: 40px;
   left: 0;
   width: 100%;
-  height: 50px;
+  height: 60px;
   overflow-x: auto;
   overflow-y: hidden;
   z-index: 11;
@@ -580,12 +626,7 @@ export default defineComponent({
 .minimap-container::-webkit-scrollbar {
   display: none;
 }
-.minimap {
-  height: 50px;
-  background-color: var(--color-background-soft);
-  cursor: pointer;
-  position: relative;
-}
+
 .minimap-timescale {
   position: absolute;
   top: 0;
@@ -619,12 +660,7 @@ export default defineComponent({
   position: relative;
   left: -50%;
 }
-.minimap-items {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  pointer-events: none;
-}
+
 .minimap-rectangle {
   position: absolute;
 }
