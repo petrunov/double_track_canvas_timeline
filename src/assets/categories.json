@@ -1,0 +1,68 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "status": "published",
+      "date_created": "2025-04-09T12:33:03.918Z",
+      "date_updated": null,
+      "cat_color": "#333277",
+      "name": "World History"
+    },
+    {
+      "id": 2,
+      "status": "published",
+      "date_created": "2025-04-09T12:33:34.481Z",
+      "date_updated": null,
+      "cat_color": "#214F22",
+      "name": "Literature"
+    },
+    {
+      "id": 3,
+      "status": "published",
+      "date_created": "2025-04-09T12:33:52.005Z",
+      "date_updated": null,
+      "cat_color": "#632C2C",
+      "name": "Archeology"
+    },
+    {
+      "id": 4,
+      "status": "published",
+      "date_created": "2025-04-09T12:34:08.874Z",
+      "date_updated": null,
+      "cat_color": "#C9B118",
+      "name": "Rulers"
+    },
+    {
+      "id": 5,
+      "status": "published",
+      "date_created": "2025-04-09T12:34:29.892Z",
+      "date_updated": null,
+      "cat_color": "#0FFF57",
+      "name": "Achievers"
+    },
+    {
+      "id": 6,
+      "status": "published",
+      "date_created": "2025-04-09T12:34:48.881Z",
+      "date_updated": null,
+      "cat_color": "#8F0E00",
+      "name": "Awardee"
+    },
+    {
+      "id": 7,
+      "status": "published",
+      "date_created": "2025-04-09T12:35:07.178Z",
+      "date_updated": null,
+      "cat_color": "#F000B0",
+      "name": "Laws"
+    },
+    {
+      "id": 8,
+      "status": "published",
+      "date_created": "2025-04-09T12:35:25.226Z",
+      "date_updated": null,
+      "cat_color": "#4417E8",
+      "name": "Performance Data"
+    }
+  ]
+}

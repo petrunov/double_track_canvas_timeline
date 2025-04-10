@@ -1,6 +1,6 @@
 // src/utils/createDrawCanvas.ts
 import type { Ref } from 'vue'
-import type { Item } from '@/services/dataService'
+import type { GroupedItem } from '@/services/dataService'
 
 // Global Map to track fade progress for each item by its id.
 const fadeProgress = new Map<string, number>()
@@ -9,7 +9,7 @@ export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
   canvasHeight: Ref<number>,
-  groupedItems: Ref<Record<string, Item[]>>,
+  groupedItems: Ref<Record<string, GroupedItem[]>>,
   itemWidth: number,
   scrollX: Ref<number>,
   categoryFilter: Ref<Record<string, boolean>>,
@@ -212,6 +212,7 @@ export function createDrawCanvas(
     globalScale: number,
     layout: ReturnType<typeof getLayoutParams>,
   ) {
+    console.log(groupedItems.value)
     const firstItems = getFirstItems()
     firstItems.forEach((item, index) => {
       drawItem(ctx, item, index, layout, globalScale)

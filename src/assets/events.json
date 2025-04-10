@@ -1,0 +1,34 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "Heading_Tamil": "மலைபடுகடாம்",
+      "Heading_English": "Malaipadukadaam",
+      "Year_TA": "332 தி.மு.",
+      "DetailedText_Tamil": "கி.மு.300-200\nமலைக்கு யானையை உவமித்து மலையில் உண்டாகும் நீர்  ஓசை கடாம் என்பதால் \nஇந்நூல் “மலைபடுகடாம்” எனப்படுகிறது. கூத்தராற்றுப்படைஎன்று இந்நூலை \nஇரணிய முட்டத்துப் பெருங்குன்றூர்ப் பெருங்கௌசிகனார் என்ற  புலவர் \nசெங்கண்மாத்து வேள் நன்னன் சேய் நன்னன்  என்ற குறுநில மன்னனை  பற்றி பாடியது . ",
+      "DetailedText_English": "This literature was written by the poet Perunkausikanar and this is about the king \nSenganmathu Vel Nannan. The metaphor of noise made by an elephant referring to \nthe sound of water flow from huge hill brings the name 'malaipadukadaam” to this work.",
+      "FeaturedImage": "17da253a-2c2e-4557-9eeb-0befa107c955",
+      "Index": "1",
+      "Date": null,
+      "Year_CE_Type": "1",
+      "Year_CE_Int": 300,
+      "Category": { "key": 2, "collection": "Categories" },
+      "AdditionalImages": []
+    },
+    {
+      "id": 2,
+      "Heading_Tamil": "GGGGG",
+      "Heading_English": "GGGG",
+      "Year_TA": "332 தி.மு.",
+      "DetailedText_Tamil": "கி.மு.300-200\nமலைக்கு யானையை உவமித்து மலையில் உண்டாகும் நீர்  ஓசை கடாம் என்பதால் \nஇந்நூல் “மலைபடுகடாம்” எனப்படுகிறது. கூத்தராற்றுப்படைஎன்று இந்நூலை \nஇரணிய முட்டத்துப் பெருங்குன்றூர்ப் பெருங்கௌசிகனார் என்ற  புலவர் \nசெங்கண்மாத்து வேள் நன்னன் சேய் நன்னன்  என்ற குறுநில மன்னனை  பற்றி பாடியது . ",
+      "DetailedText_English": "This literature was written by the poet Perunkausikanar and this is about the king \nSenganmathu Vel Nannan. The metaphor of noise made by an elephant referring to \nthe sound of water flow from huge hill brings the name 'malaipadukadaam” to this work.",
+      "FeaturedImage": "17da253a-2c2e-4557-9eeb-0befa107c955",
+      "Index": "1",
+      "Date": null,
+      "Year_CE_Type": "1",
+      "Year_CE_Int": 301,
+      "Category": { "key": 2, "collection": "Categories" },
+      "AdditionalImages": []
+    }
+  ]
+}
