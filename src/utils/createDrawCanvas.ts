@@ -1,6 +1,6 @@
 // src/utils/createDrawCanvas.ts
 import type { Ref } from 'vue'
-import type { GroupedItem } from '@/services/dataService'
+import type { GroupedItem, Item } from '@/services/dataService'
 
 // Global Map to track fade progress for each item by its id.
 const fadeProgress = new Map<string, number>()
@@ -129,10 +129,9 @@ export function createDrawCanvas(
 
     const { alpha, fadeScale, offsetX, offsetY } = updateFadeProgress(String(item.id))
 
-    // ------------------------
-    // First Track: Items that are NOT world items.
-    // ------------------------
-    if (item.type !== 'world' && categoryFilter.value[item.category]) {
+    // New logic based on category instead of type:
+    // First Track: Items NOT in "World History"
+    if (item.category.toLowerCase() !== 'world history' && categoryFilter.value[item.category]) {
       ctx.save()
       ctx.translate(x, 0)
       ctx.globalAlpha = alpha
@@ -142,7 +141,7 @@ export function createDrawCanvas(
       // Draw background rectangle.
       ctx.fillStyle = 'rgba(255,255,255,0.8)'
       ctx.fillRect(0, layout.itemY_local, effectiveItemWidth - 10, layout.itemHeight)
-      // Draw text with font sizes scaled by the global scale factor.
+      // Draw text using Tamil content.
       ctx.fillStyle = '#000'
       ctx.font = `bold ${14 * globalScale}px sans-serif`
       const titleEndY = wrapText(
@@ -162,10 +161,8 @@ export function createDrawCanvas(
       ctx.restore()
     }
 
-    // ------------------------
-    // Second Track: Items that are NOT tamil items.
-    // ------------------------
-    if (item.type !== 'tamil' && categoryFilter.value[item.category]) {
+    // Second Track: Items from "World History"
+    if (item.category.toLowerCase() === 'world history' && categoryFilter.value[item.category]) {
       ctx.save()
       ctx.translate(x, 0)
       ctx.globalAlpha = alpha
@@ -250,11 +247,12 @@ export function createDrawCanvas(
   ) {
     const firstItems = getFirstItems()
 
-    // First Track: Year Labels.
+    // First Track: Year Labels for items NOT in "World History"
     firstItems.forEach((item, index) => {
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
-      if (item.type === 'world' || !categoryFilter.value[item.category]) return
+      if (item.category.toLowerCase() === 'world history' || !categoryFilter.value[item.category])
+        return
 
       ctx.save()
       ctx.translate(x, 0)
@@ -270,11 +268,12 @@ export function createDrawCanvas(
       ctx.restore()
     })
 
-    // Second Track: Year Labels.
+    // Second Track: Year Labels for items in "World History"
     firstItems.forEach((item, index) => {
       const x = index * effectiveItemWidth - scrollX.value
       if (x + effectiveItemWidth < 0 || x > canvasWidth.value) return
-      if (item.type === 'tamil' || !categoryFilter.value[item.category]) return
+      if (item.category.toLowerCase() !== 'world history' || !categoryFilter.value[item.category])
+        return
 
       ctx.save()
       ctx.translate(x, 0)

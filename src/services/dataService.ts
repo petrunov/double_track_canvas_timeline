@@ -12,7 +12,6 @@ export interface Item {
   category: string
   index: number
   date: string
-  type: string
 }
 
 export interface ItemsByYear {
