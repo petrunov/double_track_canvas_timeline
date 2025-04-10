@@ -18,12 +18,12 @@ export function createDrawCanvas(
     lineHeight: number,
   ) => number,
 ) {
-  // Original constant used for adjusting the width of each item.
+  // Constant used for adjusting the width of each item.
   const EFFECTIVE_WIDTH_OFFSET = 2
 
   // Base design constants (for a standard reference screen).
   // These values will be multiplied by the global scale factor.
-  const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // The fixed height for a single item (before scaling)
+  const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // Fixed height for a single item (before scaling)
   const REFERENCE_MULTI_ITEM_UNIT = 90 // Unit height per row if 4 items were stacked.
   const REFERENCE_MULTI_ITEM_GAP = 4 // Gap between items in a multi-item stack.
   const REFERENCE_TEXT_MARGIN = 5
@@ -31,7 +31,7 @@ export function createDrawCanvas(
   const REFERENCE_LINE_HEIGHT_MULTIPLIER = 20
   const REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET = 30
   const MIN_SCREEN_WIDTH = 320
-  const REFERENCE_MAX_SCREEN_WIDTH = 1920 // We'll use this as the upper bound reference
+  const REFERENCE_MAX_SCREEN_WIDTH = 1920 // Upper bound reference
 
   // Transition and arrow constants (will be scaled too)
   const REFERENCE_FADE_INITIAL_SCALE = 0.5
@@ -41,12 +41,19 @@ export function createDrawCanvas(
   const REFERENCE_ARROW_WIDTH = 20
   const REFERENCE_ARROW_HEIGHT = 10
 
+  // Color palette for category indicators.
+  const colorPalette = ['#f44336', '#e91e63', '#9c27b0', '#2196f3', '#4caf50', '#ff9800', '#795548']
+  // Helper: return a color for a given category using sorted keys.
+  const getCategoryColor = (category: string): string => {
+    const keys = Object.keys(categoryFilter.value).sort()
+    const index = keys.indexOf(category)
+    return colorPalette[index % colorPalette.length]
+  }
+
   // Map to keep fade progress per item.
   const fadeProgress = new Map<string, number>()
 
-  // A scale factor based on the current canvasWidth.
-  // This limits the effective canvas width between MIN_SCREEN_WIDTH and REFERENCE_MAX_SCREEN_WIDTH,
-  // then linearly interpolates a scale factor.
+  // Compute a scale factor based on the current canvasWidth.
   const getScaleFactor = () => {
     const clampedWidth = Math.max(
       MIN_SCREEN_WIDTH,
@@ -59,26 +66,16 @@ export function createDrawCanvas(
     return MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
   }
 
-  // Update layout parameters.
-  // We inject the globalScale into the computation so that item heights and related values scale.
+  // Layout parameters calculated from the global scale.
   function getLayoutParams(globalScale: number) {
     const rowHeight = canvasHeight.value / 2
     const trackTopMargin = canvasHeight.value * 0.05
     const bottomMargin = 10
     const trackContentHeight = rowHeight - trackTopMargin - bottomMargin
 
-    // Scale the single item height.
     const singleItemHeight = REFERENCE_SINGLE_ITEM_HEIGHT * globalScale
-
-    // Year lane height (scaled)
     const yearLaneHeight = 20 * globalScale
-
-    // laneY position is computed relative to the track content height.
     const laneY = trackTopMargin + trackContentHeight - yearLaneHeight
-
-    // We want the bottom edge of our drawing area for items to align with singleItemHeight.
-    // Thus, itemY is calculated such that:
-    //   itemY + singleItemHeight = laneY - 20 * globalScale
     const itemY = laneY - 20 * globalScale - singleItemHeight
 
     return {
@@ -86,21 +83,18 @@ export function createDrawCanvas(
       trackTopMargin,
       bottomMargin,
       trackContentHeight,
-      singleItemHeight, // already scaled
+      singleItemHeight,
       yearLaneHeight,
       laneY,
       itemY,
     }
   }
 
-  // Update fade progress with scaled translate values.
-  // Now, if an item is new (or its fade progress has been cleared), it will start at 0.
+  // Update fade progress for an item.
   const updateFadeProgress = (itemId: string) => {
-    // Increase progress up to 1
     const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + 0.01)
     fadeProgress.set(itemId, progress)
     const alpha = progress
-    // Use unscaled constants multiplied by the global scale during transformation.
     const fadeScale =
       REFERENCE_FADE_INITIAL_SCALE +
       progress * (REFERENCE_FADE_FINAL_SCALE - REFERENCE_FADE_INITIAL_SCALE)
@@ -109,8 +103,7 @@ export function createDrawCanvas(
     return { alpha, fadeScale, offsetX, offsetY }
   }
 
-  // Applies the fade transforms. The translation values are scaled using globalScale.
-  // effectiveItemWidth is passed to compute transform relative to the right edge.
+  // Apply fade transforms.
   const applyFadeTransform = (
     ctx: CanvasRenderingContext2D,
     fadeScale: number,
@@ -165,11 +158,10 @@ export function createDrawCanvas(
     }
   }
 
-  // Draw track for items; scales heights and spacing based on globalScale.
-  // effectiveItemWidth is used for all horizontal calculations.
+  // Draw track for items; applies fade in effect to all sub-elements.
   const drawTrack = (
     ctx: CanvasRenderingContext2D,
-    items: { id: string; tamil_heading?: string; english_heading?: string }[],
+    items: { id: string; tamil_heading?: string; english_heading?: string; category?: string }[],
     offsetX: number,
     offsetY: number,
     globalScale: number,
@@ -182,58 +174,55 @@ export function createDrawCanvas(
     ctx.save()
     ctx.translate(offsetX, offsetY)
 
-    if (items.length === 1) {
-      // Draw a single item using the fixed (but scaled) single item height.
-      const y = layout.itemY
-      const item = items[0]
-      ctx.save()
+    // Helper to draw one item with fade in for all elements.
+    const drawOneItem = (item: any, y: number, rectHeight: number) => {
+      // Check category visibility.
+      const visible = categoryFilter.value[item.category || ''] !== false
       const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
-      ctx.globalAlpha = alpha
+      const effectiveAlpha = visible ? alpha : 0
+
+      // Group all drawing with same fade effect.
+      ctx.save()
+      ctx.globalAlpha = effectiveAlpha
       applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
+      // Draw main item (background + text)
       drawRectWithText(
         ctx,
         getTitle(item),
         0,
         y,
         effectiveItemWidth - 10,
-        layout.singleItemHeight,
+        rectHeight,
         globalScale,
-        false,
+        items.length > 1,
       )
+      // Draw top category indicator with same fade in.
+      const topIndicatorHeight = 5 * globalScale
+      ctx.fillStyle = getCategoryColor(item.category || '')
+      ctx.fillRect(0, y, effectiveItemWidth - 10, topIndicatorHeight)
       ctx.restore()
+    }
+
+    if (items.length === 1) {
+      const y = layout.itemY
+      const item = items[0]
+      drawOneItem(item, y, layout.singleItemHeight)
     } else {
-      // For multiple items, calculate their total available height (including gaps).
       const multiItemUnit = REFERENCE_MULTI_ITEM_UNIT * globalScale
       const multiItemGap = REFERENCE_MULTI_ITEM_GAP * globalScale
       const totalMultiHeight = items.length * multiItemUnit
-      // Align so the bottom of the multi-item stack matches the bottom of a single item.
       const startY = layout.itemY + layout.singleItemHeight - totalMultiHeight
       const itemHeightMulti = multiItemUnit - (multiItemGap * (items.length - 1)) / items.length
-
       items.forEach((item, i) => {
         const y = startY + i * (itemHeightMulti + multiItemGap)
-        ctx.save()
-        const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
-        ctx.globalAlpha = alpha
-        applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
-        drawRectWithText(
-          ctx,
-          getTitle(item),
-          0,
-          y,
-          effectiveItemWidth - 10,
-          itemHeightMulti,
-          globalScale,
-          true,
-        )
-        ctx.restore()
+        drawOneItem(item, y, itemHeightMulti)
       })
     }
 
     ctx.restore()
   }
 
-  // Draw the year labels. effectiveItemWidth is used for positioning.
+  // Draw the year labels.
   const drawYearElements = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
@@ -274,7 +263,7 @@ export function createDrawCanvas(
     })
   }
 
-  // Draw the arrow indicators. Their positions and sizes are scaled.
+  // Draw arrow indicators.
   const drawArrowIndicators = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
@@ -305,11 +294,9 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Compute the global scale based on the current canvas width.
+    // Compute global scale and effective width.
     const globalScale = getScaleFactor()
-    // Compute the effective item width relative to screen size.
     const effectiveItemWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
-    // Get layout parameters.
     const layout = getLayoutParams(globalScale)
 
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
@@ -319,7 +306,6 @@ export function createDrawCanvas(
       yearGroup.groups.forEach((groupColumn) => {
         const x = flatColumnIndex * effectiveItemWidth - scrollX.value
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
-          // Group is in viewport – draw tracks.
           drawTrack(
             ctx,
             groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
@@ -341,7 +327,6 @@ export function createDrawCanvas(
             (item) => item.english_heading || '',
           )
         } else {
-          // Group is out-of-viewport – remove fade progress so fade will restart when it re-enters.
           groupColumn.tamil.forEach((item) => fadeProgress.delete(String(item.id)))
           groupColumn.world.forEach((item) => fadeProgress.delete(String(item.id)))
         }

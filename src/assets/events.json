@@ -27,7 +27,7 @@
       "Date": null,
       "Year_CE_Type": "1",
       "Year_CE_Int": 301,
-      "Category": { "key": 2, "collection": "Categories" },
+      "Category": { "key": 3, "collection": "Categories" },
       "AdditionalImages": []
     },
     {
@@ -72,7 +72,7 @@
       "Date": null,
       "Year_CE_Type": "1",
       "Year_CE_Int": 350,
-      "Category": { "key": 1, "collection": "Categories" },
+      "Category": { "key": 2, "collection": "Categories" },
       "AdditionalImages": []
     },
     {
@@ -87,7 +87,7 @@
       "Date": null,
       "Year_CE_Type": "1",
       "Year_CE_Int": 351,
-      "Category": { "key": 1, "collection": "Categories" },
+      "Category": { "key": 4, "collection": "Categories" },
       "AdditionalImages": []
     },
     {
@@ -102,7 +102,7 @@
       "Date": null,
       "Year_CE_Type": "1",
       "Year_CE_Int": 351,
-      "Category": { "key": 1, "collection": "Categories" },
+      "Category": { "key": 3, "collection": "Categories" },
       "AdditionalImages": []
     },
     {
@@ -147,7 +147,7 @@
       "Date": null,
       "Year_CE_Type": "1",
       "Year_CE_Int": 351,
-      "Category": { "key": 2, "collection": "Categories" },
+      "Category": { "key": 6, "collection": "Categories" },
       "AdditionalImages": []
     },
     {
