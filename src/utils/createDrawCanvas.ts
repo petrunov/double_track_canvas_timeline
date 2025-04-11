@@ -242,7 +242,7 @@ export function createDrawCanvas(
         // Only draw if within the current viewport:
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
           ctx.save()
-          ctx.font = `bold ${14 * globalScale}px sans-serif`
+          ctx.font = `${14 * globalScale}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
           ctx.fillStyle = '#000'
@@ -365,7 +365,7 @@ export function createDrawCanvas(
     const minIndicatorWidth = 10
     if (indicatorWidth < minIndicatorWidth) indicatorWidth = minIndicatorWidth
 
-    const leftMargin = 20
+    const leftMargin = 0
     const availableMinimapWidth = minimapWidth - 2 * leftMargin
     const indicatorLeft = leftMargin + (scrollX.value / timelineFullWidth) * availableMinimapWidth
 

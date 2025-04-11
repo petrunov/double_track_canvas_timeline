@@ -76,6 +76,9 @@ import { createDrawCanvas } from '@/utils/createDrawCanvas'
 export default defineComponent({
   name: 'CanvasTimeline',
   setup() {
+    // Constant for minimap left/right margin.
+    const MINIMAP_MARGIN = 0
+
     // --- Canvas & Scrolling state ---
     const scrollCanvas = ref<HTMLCanvasElement | null>(null)
     const scrollX = ref(0)
@@ -83,7 +86,6 @@ export default defineComponent({
     const isDragging = ref(false)
     let dragStartX = 0
     let dragScrollStart = 0
-    const indicatorDragOffset = 0
 
     // --- Data and Items ---
     const items = ref<Item[]>([])
@@ -108,7 +110,6 @@ export default defineComponent({
       const MAX_SCALE = 1.2
       const globalScale = MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
 
-      // EFFECTIVE_WIDTH_OFFSET is 2 (as used in createDrawCanvas)
       const EFFECTIVE_WIDTH_OFFSET = 2
       // Effective width for one column:
       const effectiveWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
@@ -290,41 +291,34 @@ export default defineComponent({
     // --- Minimap Indicator Dragging ---
     let indicatorDragStartX = 0
     let indicatorDragged = false
-
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
-      // No offset variable is recorded—instead, we simply start tracking mouse moves.
       document.addEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.addEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.add('no-select')
     }
-
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
       if (!isIndicatorDragging.value) return
       e.preventDefault()
 
-      // Define the margins as used in your minimap layout.
-      const leftMargin = 20
-      const rightMargin = 20
+      // Use MINIMAP_MARGIN for left/right margins.
+      const leftMargin = MINIMAP_MARGIN,
+        rightMargin = MINIMAP_MARGIN
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
-
-      // Get the container's bounding rect for relative positioning.
       const containerRect = (
         document.querySelector('.minimap-container') as HTMLElement
       ).getBoundingClientRect()
 
-      // Determine the current indicator width (same as before).
+      // Determine the current indicator width.
       const indicatorWidth = Math.max(
         (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
         10,
       )
 
-      // Calculate the new center, relative to the container.
+      // Calculate the new center relative to the container.
       const newCenter = e.clientX - containerRect.left
-      // Position the indicator so its center is exactly at the cursor.
       let newIndicatorLeft = newCenter - indicatorWidth / 2
-      // Clamp newIndicatorLeft within the allowed space.
       newIndicatorLeft = Math.max(
         leftMargin,
         Math.min(newIndicatorLeft, minimapWidth.value - rightMargin - indicatorWidth),
@@ -333,13 +327,10 @@ export default defineComponent({
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
 
-      // Map the indicator’s new horizontal position to a scroll value.
-      // Compute the ratio from (newIndicatorLeft - leftMargin) to availableWidth.
       const ratio = (newIndicatorLeft - leftMargin) / availableWidth
       const maxScroll = totalContentWidth.value - canvasWidth.value
       scrollX.value = ratio * maxScroll
     }
-
     const onMinimapIndicatorMouseUp = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
@@ -354,27 +345,22 @@ export default defineComponent({
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
 
-      // Calculate the x coordinate of the click relative to the container
       const clickX = e.clientX - containerRect.left
 
-      // Determine the indicator's width based on viewport and timeline widths.
       const indicatorWidth = Math.max(
         (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
         10,
       )
 
-      // Center the indicator under the cursor by subtracting half of its width.
       let newIndicatorLeft = clickX - indicatorWidth / 2
-      // Clamp the indicator so it stays within the minimap boundaries.
       newIndicatorLeft = Math.max(
-        0,
-        Math.min(newIndicatorLeft, minimapWidth.value - indicatorWidth),
+        MINIMAP_MARGIN,
+        Math.min(newIndicatorLeft, minimapWidth.value - indicatorWidth - MINIMAP_MARGIN),
       )
 
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
 
-      // Map the indicator's position to the timeline's scroll position.
       const maxIndicatorTravel = minimapWidth.value - indicatorWidth
       const ratio = newIndicatorLeft / maxIndicatorTravel
       const maxScroll = totalContentWidth.value - canvasWidth.value
@@ -383,22 +369,19 @@ export default defineComponent({
       customSmoothScrollTo(targetScroll, 500)
     }
 
-    // --- Timeline Ticks (unchanged from before) ---
+    // --- Timeline Ticks ---
     const timelineTicks = computed(() => {
-      // Use fixed left/right margins.
-      const leftMargin = 20,
-        rightMargin = 20
+      const leftMargin = MINIMAP_MARGIN,
+        rightMargin = MINIMAP_MARGIN
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
 
-      // Choose a fixed spacing for ticks; here we set tickSpacing to 5px,
-      // which will produce twice as many ticks as a 10px spacing.
+      // Using tickSpacing of 15px (adjust as needed)
       const tickSpacing = 15
       const tickCount = Math.floor(availableWidth / tickSpacing) + 1
       const ticks = []
 
       for (let i = 0; i < tickCount; i++) {
         const left = leftMargin + i * tickSpacing
-        // All ticks are the same style (e.g., 'minor').
         ticks.push({ left, type: 'minor' })
       }
 
@@ -416,21 +399,20 @@ export default defineComponent({
       '#795548',
     ]
 
-    // --- Minimap Rectangles (using ratio-based horizontal positioning) ---
+    // --- Minimap Rectangles ---
     const minimapRectangles = computed(() => {
       if (!groupedItems.value || groupedItems.value.length === 0) return []
 
-      const minimapItemWidth = 5 // fixed width in pixels
-      const gap = 1 // gap between rectangles (if needed)
-      const leftMargin = 2 // left margin for minimap rectangles
-      const timescaleHeight = 20 // timescale height at the top
-      const minimapTotalHeight = 75 // total height for the minimap container
+      const minimapItemWidth = 5
+      const leftMargin = 2
+      const timescaleHeight = 20
+      const minimapTotalHeight = 75
 
       const trackAreaHeight = minimapTotalHeight - timescaleHeight
-      const trackHeight = trackAreaHeight / 2 // each track gets half
-      const rowCount = 6 // number of rows in each track (as used previously)
-      const rowHeight = trackHeight / rowCount // height for each row
-      const rectHeight = 1.5 // fixed rectangle height
+      const trackHeight = trackAreaHeight / 2
+      const rowCount = 6
+      const rowHeight = trackHeight / rowCount
+      const rectHeight = 1.5
 
       const rectangles: Array<{
         left: number
@@ -444,16 +426,14 @@ export default defineComponent({
 
       let flatColumnIndex = 0
 
-      // Horizontal mapping
       let totalColumns = 0
       groupedItems.value.forEach((yg) => {
         totalColumns += yg.groups.length
       })
       const EFFECTIVE_WIDTH_OFFSET = 2
-      const effectiveItemWidth = itemWidth + EFFECTIVE_WIDTH_OFFSET // no extra scaling in the minimap
+      const effectiveItemWidth = itemWidth + EFFECTIVE_WIDTH_OFFSET
       const fullTimelineWidth = totalColumns * effectiveItemWidth
 
-      // Process each group (column) of grouped items.
       groupedItems.value.forEach((yearGroup) => {
         yearGroup.groups.forEach((groupColumn) => {
           const rawX = flatColumnIndex * effectiveItemWidth
@@ -461,9 +441,8 @@ export default defineComponent({
             leftMargin + (rawX / fullTimelineWidth) * (minimapWidth.value - 2 * leftMargin)
 
           // --- Tamil Track (upper track) ---
-          // Calculate inversion: if there are fewer items, push them to the bottom.
           groupColumn.tamil.forEach((item, rowIndex) => {
-            const totalItems = groupColumn.tamil.length // number of items in this column
+            const totalItems = groupColumn.tamil.length
             const invertedRow = rowCount - totalItems + rowIndex
             const top = timescaleHeight + invertedRow * rowHeight - 10
             rectangles.push({
@@ -549,8 +528,8 @@ export default defineComponent({
       if (!indicatorDragged && Math.abs(touch.clientX - indicatorDragStartX) > 5) {
         indicatorDragged = true
       }
-      const leftMargin = 20,
-        rightMargin = 20
+      const leftMargin = MINIMAP_MARGIN,
+        rightMargin = MINIMAP_MARGIN
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
       const containerRect = (
         document.querySelector('.minimap-container') as HTMLElement
@@ -587,7 +566,6 @@ export default defineComponent({
     }
 
     onMounted(async () => {
-      // getItems now returns both items and groupedItems.
       const result = await getItems()
       items.value = result.items
       groupedItems.value = result.groupedItems
