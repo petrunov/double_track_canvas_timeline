@@ -518,6 +518,17 @@ export default defineComponent({
       document.body.classList.remove('no-select')
     }
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestAnimationFrame(() => {
+          nextTick(() => {
+            updateDimensions()
+            drawCanvas()
+          })
+        })
+      }
+    }
+
     onMounted(async () => {
       const result = await getItems()
       items.value = result.items
@@ -536,6 +547,7 @@ export default defineComponent({
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
       window.addEventListener('resize', updateDimensions)
+      document.addEventListener('visibilitychange', onVisibilityChange)
     })
 
     onUnmounted(() => {
@@ -549,6 +561,7 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('resize', updateDimensions)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       cancelAnimation()
     })
 
