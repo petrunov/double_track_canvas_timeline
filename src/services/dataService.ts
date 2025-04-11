@@ -250,7 +250,7 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
     return categories[Math.floor(Math.random() * 7) + 1]
   }
 
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 3000; i++) {
     const randomYear = getRandomYear()
     const randomCategory = getRandomCategory()
 

@@ -176,7 +176,7 @@ export default defineComponent({
     const minimapRectangles = computed(() => {
       if (!groupedItems.value || groupedItems.value.length === 0) return []
 
-      const minimapItemWidth = 5
+      const minimapItemWidth = 2
       const leftMargin = 2
       const timescaleHeight = 20
       const minimapTotalHeight = 75
