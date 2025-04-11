@@ -376,7 +376,6 @@ export default defineComponent({
       e.preventDefault()
       const leftMargin = MINIMAP_MARGIN,
         rightMargin = MINIMAP_MARGIN
-      const availableWidth = minimapWidth.value - leftMargin - rightMargin
       const containerRect = (
         document.querySelector('.minimap-container') as HTMLElement
       ).getBoundingClientRect()
@@ -392,7 +391,10 @@ export default defineComponent({
       )
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-      const ratio = (newIndicatorLeft - leftMargin) / availableWidth
+      const maxIndicatorTravel = minimapWidth.value - leftMargin - rightMargin - indicatorWidth
+      const adjustedLeft = newIndicatorLeft - leftMargin
+      const ratio = adjustedLeft / maxIndicatorTravel
+      scrollX.value = ratio * (totalContentWidth.value - canvasWidth.value)
       const maxScroll = totalContentWidth.value - canvasWidth.value
       scrollX.value = ratio * maxScroll
     }
