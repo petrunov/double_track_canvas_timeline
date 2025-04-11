@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import TimelineView from './TimelineView.vue'
+import CanvasTimeline from './CanvasTimeline.vue'
 </script>
 
 <template>
-  <TimelineView></TimelineView>
+  <CanvasTimeline />
 </template>
