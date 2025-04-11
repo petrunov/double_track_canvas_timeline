@@ -83,11 +83,38 @@ export default defineComponent({
     const isDragging = ref(false)
     let dragStartX = 0
     let dragScrollStart = 0
+    const indicatorDragOffset = 0
 
     // --- Data and Items ---
     const items = ref<Item[]>([])
     const groupedItems = ref<YearGroup[]>([])
-    const totalContentWidth = computed(() => items.value.length * itemWidth)
+    const totalContentWidth = computed(() => {
+      // Calculate the total number of columns across all year groups.
+      let totalColumns = 0
+      groupedItems.value.forEach((yg) => {
+        totalColumns += yg.groups.length
+      })
+
+      // Reuse the same scale factor logic as in your drawing function.
+      const MIN_SCREEN_WIDTH = 320
+      const REFERENCE_MAX_SCREEN_WIDTH = 1920
+      const clampedWidth = Math.max(
+        MIN_SCREEN_WIDTH,
+        Math.min(canvasWidth.value, REFERENCE_MAX_SCREEN_WIDTH),
+      )
+      const ratio =
+        (clampedWidth - MIN_SCREEN_WIDTH) / (REFERENCE_MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
+      const MIN_SCALE = 0.8
+      const MAX_SCALE = 1.2
+      const globalScale = MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
+
+      // EFFECTIVE_WIDTH_OFFSET is 2 (as used in createDrawCanvas)
+      const EFFECTIVE_WIDTH_OFFSET = 2
+      // Effective width for one column:
+      const effectiveWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
+      // Full timeline width:
+      return totalColumns * effectiveWidth
+    })
 
     // --- Canvas dimensions ---
     const canvasWidth = ref(window.innerWidth)
@@ -263,51 +290,56 @@ export default defineComponent({
     // --- Minimap Indicator Dragging ---
     let indicatorDragStartX = 0
     let indicatorDragged = false
+
     const onMinimapIndicatorMouseDown = (e: MouseEvent) => {
       e.stopPropagation()
       isIndicatorDragging.value = true
-      indicatorDragStartX = e.clientX
-      indicatorDragged = false
+      // No offset variable is recorded—instead, we simply start tracking mouse moves.
       document.addEventListener('mousemove', onMinimapIndicatorMouseMove)
       document.addEventListener('mouseup', onMinimapIndicatorMouseUp)
       document.body.classList.add('no-select')
     }
+
     const onMinimapIndicatorMouseMove = (e: MouseEvent) => {
       if (!isIndicatorDragging.value) return
       e.preventDefault()
-      if (!indicatorDragged && Math.abs(e.clientX - indicatorDragStartX) > 5) {
-        indicatorDragged = true
-      }
-      const leftMargin = 20,
-        rightMargin = 20
+
+      // Define the margins as used in your minimap layout.
+      const leftMargin = 20
+      const rightMargin = 20
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
+
+      // Get the container's bounding rect for relative positioning.
       const containerRect = (
         document.querySelector('.minimap-container') as HTMLElement
       ).getBoundingClientRect()
+
+      // Determine the current indicator width (same as before).
       const indicatorWidth = Math.max(
         (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
         10,
       )
-      let newCenter = e.clientX - containerRect.left - leftMargin
-      newCenter = Math.max(
-        indicatorWidth / 2,
-        Math.min(newCenter, availableWidth - indicatorWidth / 2),
+
+      // Calculate the new center, relative to the container.
+      const newCenter = e.clientX - containerRect.left
+      // Position the indicator so its center is exactly at the cursor.
+      let newIndicatorLeft = newCenter - indicatorWidth / 2
+      // Clamp newIndicatorLeft within the allowed space.
+      newIndicatorLeft = Math.max(
+        leftMargin,
+        Math.min(newIndicatorLeft, minimapWidth.value - rightMargin - indicatorWidth),
       )
-      const newIndicatorLeft = newCenter - indicatorWidth / 2 + leftMargin
+
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = Math.min(...years)
-      const maxYear = Math.max(...years)
-      const targetYear = minYear + (newCenter / availableWidth) * (maxYear - minYear)
-      const targetScroll = getScrollPositionForYear(targetYear)
-      scrollX.value = targetScroll
-      const { indicatorWidth: newWidth, indicatorLeft: newLeft } = updateTransforms()
-      minimapIndicatorStyle.value = {
-        width: newWidth + 'px',
-        left: newLeft + 'px',
-      }
+
+      // Map the indicator’s new horizontal position to a scroll value.
+      // Compute the ratio from (newIndicatorLeft - leftMargin) to availableWidth.
+      const ratio = (newIndicatorLeft - leftMargin) / availableWidth
+      const maxScroll = totalContentWidth.value - canvasWidth.value
+      scrollX.value = ratio * maxScroll
     }
+
     const onMinimapIndicatorMouseUp = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('mousemove', onMinimapIndicatorMouseMove)
@@ -321,21 +353,33 @@ export default defineComponent({
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement
       if (!minimapContainer) return
       const containerRect = minimapContainer.getBoundingClientRect()
-      let newIndicatorLeft = e.clientX - containerRect.left
+
+      // Calculate the x coordinate of the click relative to the container
+      const clickX = e.clientX - containerRect.left
+
+      // Determine the indicator's width based on viewport and timeline widths.
       const indicatorWidth = Math.max(
         (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
         10,
       )
+
+      // Center the indicator under the cursor by subtracting half of its width.
+      let newIndicatorLeft = clickX - indicatorWidth / 2
+      // Clamp the indicator so it stays within the minimap boundaries.
       newIndicatorLeft = Math.max(
         0,
         Math.min(newIndicatorLeft, minimapWidth.value - indicatorWidth),
       )
+
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
+
+      // Map the indicator's position to the timeline's scroll position.
       const maxIndicatorTravel = minimapWidth.value - indicatorWidth
       const ratio = newIndicatorLeft / maxIndicatorTravel
       const maxScroll = totalContentWidth.value - canvasWidth.value
       const targetScroll = ratio * maxScroll
+
       customSmoothScrollTo(targetScroll, 500)
     }
 
