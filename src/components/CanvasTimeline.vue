@@ -410,23 +410,32 @@ export default defineComponent({
       if (!scrollCanvas.value) return
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement
       if (!minimapContainer) return
+
       const containerRect = minimapContainer.getBoundingClientRect()
       const clickX = e.clientX - containerRect.left
+
+      const MIN_INDICATOR_WIDTH = 10
       const indicatorWidth = Math.max(
         (canvasWidth.value / totalContentWidth.value) * minimapWidth.value,
-        10,
+        MIN_INDICATOR_WIDTH,
       )
+
+      // Clamp indicator left position within margins
       let newIndicatorLeft = clickX - indicatorWidth / 2
       newIndicatorLeft = Math.max(
         MINIMAP_MARGIN,
         Math.min(newIndicatorLeft, minimapWidth.value - indicatorWidth - MINIMAP_MARGIN),
       )
+
       minimapIndicatorStyle.value.left = newIndicatorLeft + 'px'
       minimapIndicatorStyle.value.width = indicatorWidth + 'px'
-      const maxIndicatorTravel = minimapWidth.value - indicatorWidth
-      const ratio = newIndicatorLeft / maxIndicatorTravel
+
+      // Correctly account for clamped width when calculating scroll ratio
+      const availableScrollWidth = minimapWidth.value - indicatorWidth - 2 * MINIMAP_MARGIN
+      const ratio = (newIndicatorLeft - MINIMAP_MARGIN) / availableScrollWidth
       const maxScroll = totalContentWidth.value - canvasWidth.value
       const targetScroll = ratio * maxScroll
+
       customSmoothScrollTo(targetScroll, 500)
     }
 

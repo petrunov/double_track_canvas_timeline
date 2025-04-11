@@ -30,6 +30,8 @@ export function createDrawCanvas(
   const MIN_SCREEN_WIDTH = 320
   const REFERENCE_MAX_SCREEN_WIDTH = 1920
 
+  const MIN_INDICATOR_WIDTH = 10
+
   // Helper: calculate the global scale factor based on canvasWidth.
   const getScaleFactor = () => {
     const clampedWidth = Math.max(
@@ -362,6 +364,7 @@ export function createDrawCanvas(
     const timelineFullWidth = totalColumns * effectiveItemWidth
     const viewportWidth = canvasWidth.value
     let indicatorWidth = (viewportWidth / timelineFullWidth) * minimapWidth
+    if (indicatorWidth < MIN_INDICATOR_WIDTH) indicatorWidth = MIN_INDICATOR_WIDTH
     const minIndicatorWidth = 10
     if (indicatorWidth < minIndicatorWidth) indicatorWidth = minIndicatorWidth
 
