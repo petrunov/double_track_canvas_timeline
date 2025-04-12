@@ -245,8 +245,6 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
     categories[6] = 'Awardee'
     categories[7] = 'Laws'
 
-    console.log(Math.floor(Math.random() * 7) + 1)
-
     return categories[Math.floor(Math.random() * 7) + 1]
   }
 
@@ -277,7 +275,5 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
 
   // Group the items using our new restructuring function.
   const groupedItems = restructureItemsGroupedByYearAndTrack(items)
-
-  console.log('groupedItems', groupedItems)
   return Promise.resolve({ items, groupedItems })
 }

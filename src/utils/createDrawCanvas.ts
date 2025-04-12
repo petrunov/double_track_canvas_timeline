@@ -182,7 +182,6 @@ export function createDrawCanvas(
       const topIndicatorHeight = 5 * globalScale
       const getCategoryColor = (category: string): string => {
         const keys = Object.keys(categoryFilter.value).sort()
-        console.log(keys)
         const index = keys.indexOf(category)
         const colorPalette = [
           '#f44336',
