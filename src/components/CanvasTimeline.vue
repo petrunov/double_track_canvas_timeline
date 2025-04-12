@@ -117,6 +117,11 @@ export default defineComponent({
     let latestTouchTime = 0
     let updateRequested = false
 
+    // --- Variables for mouse inertia tracking ---
+    let mouseLastX = 0
+    let mouseLastTime = 0
+    let mouseVelocity = 0
+
     // --- Data and Items ---
     const items = ref<Item[]>([])
     const groupedItems = ref<YearGroup[]>([])
@@ -361,7 +366,6 @@ export default defineComponent({
       const { rawIndicatorLeft, indicatorWidth } = computeIndicatorGeometry()
       const desiredScrollLeft =
         (rawIndicatorLeft / (extendedWidth - indicatorWidth)) * (extendedWidth - containerWidth)
-
       minimapContainer.scrollLeft = desiredScrollLeft
     }
 
@@ -418,15 +422,33 @@ export default defineComponent({
       adjustMinimapScroll()
     }
 
+    // --- Mouse Handlers with Inertia ---
     const onMouseDown = (e: MouseEvent) => {
+      // Skip if dragging the minimap indicator
       if ((e.target as HTMLElement).classList.contains('minimap-indicator')) return
       isDragging.value = true
       dragStartX = e.clientX
       dragScrollStart = scrollX.value
+      // Initialize mouse tracking variables
+      mouseLastX = e.clientX
+      mouseLastTime = performance.now()
+      mouseVelocity = 0
       document.body.classList.add('no-select')
     }
+
     const onMouseMove = (e: MouseEvent) => {
       if (!isDragging.value) return
+
+      const now = performance.now()
+      const dt = now - mouseLastTime
+      if (dt > 16) {
+        // update roughly every frame
+        const dx = e.clientX - mouseLastX
+        mouseVelocity = dx / (dt || 1)
+        mouseLastX = e.clientX
+        mouseLastTime = now
+      }
+
       const dx = e.clientX - dragStartX
       scrollX.value = Math.max(
         0,
@@ -442,6 +464,11 @@ export default defineComponent({
     const onMouseUp = () => {
       isDragging.value = false
       document.body.classList.remove('no-select')
+      // Trigger inertia on mouse release if the velocity is significant.
+      if (Math.abs(mouseVelocity) > 0.1) {
+        // You can adjust the multiplier (20 here) for longer/shorter inertia.
+        inertiaScroll(mouseVelocity * 10)
+      }
     }
 
     let draggingIndicatorWidth: number | null = null
@@ -497,35 +524,28 @@ export default defineComponent({
       document.addEventListener('touchend', onMinimapIndicatorTouchEnd, { passive: false })
       document.body.classList.add('no-select')
     }
-
     const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
       if (!isIndicatorDragging.value) return
       e.preventDefault()
       const touch = e.touches[0]
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
       if (!minimapContainer) return
-
       const extendedWidth = minimapWidth.value
       const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width)
       const containerRect = minimapContainer.getBoundingClientRect()
       const extendedTouchX = touch.clientX - containerRect.left + minimapContainer.scrollLeft
-
       let newExtendedIndicatorLeft = extendedTouchX - indicatorWidth / 2
       newExtendedIndicatorLeft = Math.max(
         0,
         Math.min(newExtendedIndicatorLeft, extendedWidth - indicatorWidth),
       )
-
       minimapIndicatorStyle.value.left = newExtendedIndicatorLeft + 'px'
-
       const maxScroll = totalContentWidth.value - canvasWidth.value
       const maxIndicatorTravel = extendedWidth - indicatorWidth
       const ratio = newExtendedIndicatorLeft / maxIndicatorTravel
       scrollX.value = ratio * maxScroll
-
       adjustMinimapScroll()
     }
-
     const onMinimapIndicatorTouchEnd = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('touchmove', onMinimapIndicatorTouchMove)
@@ -569,23 +589,17 @@ export default defineComponent({
       currentVelocity = 0
       document.body.classList.add('no-select')
     }
-
     const onTouchMove = (e: TouchEvent) => {
       if (!isDragging.value || !isTouching.value) return
       e.preventDefault() // Prevent native scrolling
-
-      // Update latest touch data
       const touch = e.touches[0]
       latestTouchX = touch.clientX
       latestTouchTime = performance.now()
-
-      // Schedule a single update per frame
       if (!updateRequested) {
         updateRequested = true
         requestAnimationFrame(processTouchMove)
       }
     }
-
     const processTouchMove = () => {
       updateRequested = false
       const currentTime = latestTouchTime
@@ -595,18 +609,14 @@ export default defineComponent({
         Math.min(initialScrollX - deltaX, totalContentWidth.value - canvasWidth.value),
       )
       scrollX.value = newScroll
-
       const timeDelta = currentTime - lastTouchTime
       if (timeDelta > 16) {
-        // roughly 60fps
         const moveDelta = latestTouchX - lastTouchX
         currentVelocity = moveDelta / (timeDelta || 1)
         lastTouchX = latestTouchX
         lastTouchTime = currentTime
       }
-
-      // Update minimap indicator geometry
-      if (timeDelta > 64) {
+      if (timeDelta > 16) {
         const { indicatorWidth, rawIndicatorLeft } = computeIndicatorGeometry()
         minimapIndicatorStyle.value = {
           width: indicatorWidth + 'px',
@@ -616,6 +626,7 @@ export default defineComponent({
       }
     }
 
+    // --- Inertia Scroll (common for touch and mouse) ---
     const deceleration = 0.015 // Adjust deceleration (pixels per ms²)
     const inertiaScroll = (initialVelocity: number) => {
       const startTime = performance.now()
@@ -638,14 +649,11 @@ export default defineComponent({
       }
       inertiaAnimationFrame = requestAnimationFrame(animate)
     }
-
     const onTouchEnd = () => {
       if (!isTouching.value) return
       isDragging.value = false
       isTouching.value = false
       document.body.classList.remove('no-select')
-
-      // Trigger inertia if velocity is significant
       if (Math.abs(currentVelocity) > 0.1) {
         inertiaScroll(currentVelocity * 20)
       }
@@ -676,7 +684,6 @@ export default defineComponent({
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
       window.addEventListener('resize', updateDimensions)
-
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
       if (minimapContainer) {
         minimapContainer.addEventListener(
@@ -688,7 +695,6 @@ export default defineComponent({
         )
       }
     })
-
     onUnmounted(() => {
       if (scrollCanvas.value) {
         scrollCanvas.value.removeEventListener('wheel', onWheel)
@@ -708,15 +714,12 @@ export default defineComponent({
       window.removeEventListener('resize', updateDimensions)
       cancelAnimation()
     })
-
-    // Watch scrollX so that any scroll action triggers a minimap adjustment.
     watch(
       () => scrollX.value,
       () => {
         adjustMinimapScroll()
       },
     )
-
     return {
       items,
       groupedItems,
