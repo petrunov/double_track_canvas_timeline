@@ -169,7 +169,7 @@ export function createDrawCanvas(
     const imageY = y + (height - IMAGE_SIZE) / 2
     const TEXT_START_X = imageX + IMAGE_SIZE + margin
 
-    ctx.fillStyle = 'rgba(255,255,255,0.8)'
+    ctx.fillStyle = 'rgba(255,255,255,1)'
     ctx.fillRect(x, y, width, height)
 
     if (image?.complete) {

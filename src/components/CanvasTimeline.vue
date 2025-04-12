@@ -732,6 +732,12 @@ export default defineComponent({
         // Add a mousemove listener on the minimap container to update its cursor.
         minimapContainer.addEventListener('mousemove', minimapMouseMoveHandler)
       }
+
+      const parallaxFactor = 0.1
+      if (scrollCanvas.value) {
+        const offset = -scrollX.value * parallaxFactor
+        scrollCanvas.value.style.setProperty('--bg-position', `${offset}px center`)
+      }
     })
     onUnmounted(() => {
       if (scrollCanvas.value) {
@@ -760,6 +766,11 @@ export default defineComponent({
       () => scrollX.value,
       () => {
         adjustMinimapScroll()
+        const parallaxFactor = 0.1
+        if (scrollCanvas.value) {
+          const offset = -scrollX.value * parallaxFactor
+          scrollCanvas.value.style.setProperty('--bg-position', `${offset}px center`)
+        }
       },
     )
     return {
@@ -801,10 +812,11 @@ export default defineComponent({
   background-color: var(--color-background-soft);
   background-image: url('@/assets/bg.jpg');
   background-size: cover;
-  background-repeat: no-repeat;
-  background-position: center;
+  background-repeat: repeat-x;
+  background-position: var(--bg-position, center);
   cursor: default;
   touch-action: none;
+  transition: background-position 1s ease-out; /* smooth out changes */
 }
 .minimap-container {
   position: fixed;
