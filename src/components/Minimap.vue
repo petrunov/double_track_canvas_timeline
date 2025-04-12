@@ -39,7 +39,7 @@
         :style="minimapIndicatorStyle"
         @mousedown="handleIndicatorMouseDown"
         @click.stop
-        ref="indicator"
+        ref="indicatorRef"
       >
         <div class="crosshair-lines"></div>
         <div class="corner top-left"></div>
@@ -52,7 +52,27 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, onMounted, onUnmounted, ref } from 'vue'
+import { defineComponent, onMounted, onUnmounted, ref, type Ref } from 'vue'
+
+interface TimelineTick {
+  left: number
+  type: 'major' | 'medium' | 'minor'
+  year?: number
+}
+
+interface MinimapRectangle {
+  left: number
+  top: number
+  width: number
+  height: number
+  title: string
+  color: string
+  category: string
+}
+
+interface CategoryFilter {
+  [key: string]: boolean
+}
 
 export default defineComponent({
   name: 'Minimap',
@@ -62,15 +82,15 @@ export default defineComponent({
       required: true,
     },
     timelineTicks: {
-      type: Array,
+      type: Array as () => TimelineTick[],
       required: true,
     },
     minimapRectangles: {
-      type: Array,
+      type: Array as () => MinimapRectangle[],
       required: true,
     },
     minimapIndicatorStyle: {
-      type: Object,
+      type: Object as () => Record<string, string | number>,
       required: true,
     },
     isIndicatorDragging: {
@@ -78,13 +98,13 @@ export default defineComponent({
       required: true,
     },
     categoryFilter: {
-      type: Object,
+      type: Object as () => CategoryFilter,
       required: true,
     },
   },
   emits: ['minimapClick', 'minimapIndicatorMouseDown', 'minimapIndicatorTouchStart'],
   setup(props, { emit }) {
-    const indicatorRef = ref<HTMLElement | null>(null)
+    const indicatorRef: Ref<HTMLElement | null> = ref(null)
 
     const handleMinimapClick = (e: MouseEvent) => {
       emit('minimapClick', e)
@@ -94,7 +114,6 @@ export default defineComponent({
       emit('minimapIndicatorMouseDown', e)
     }
 
-    // Optional: Add touch event handling directly on the indicator
     const handleTouchStart = (e: TouchEvent) => {
       emit('minimapIndicatorTouchStart', e)
     }
@@ -121,7 +140,6 @@ export default defineComponent({
 </script>
 
 <style scoped>
-/* Minimap container styles */
 .minimap-container {
   position: fixed;
   bottom: 40px;
@@ -139,7 +157,6 @@ export default defineComponent({
   display: none;
 }
 
-/* Minimap ticks and labels */
 .minimap-timescale {
   position: absolute;
   top: 0;
@@ -174,12 +191,10 @@ export default defineComponent({
   left: -50%;
 }
 
-/* Minimap item markers */
 .minimap-rectangle {
   position: absolute;
 }
 
-/* Minimap indicator and its sub‑elements */
 .minimap-indicator {
   position: absolute;
   height: 100%;

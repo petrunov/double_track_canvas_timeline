@@ -171,7 +171,7 @@ interface CategoriesResponse {
  * Replace this with an actual fetch call for production.
  */
 async function getEventsData(): Promise<EventsResponse> {
-  return import('/src/assets/events.json') as Promise<EventsResponse>
+  return import('../assets/events.json') as Promise<EventsResponse>
 }
 
 /**
@@ -179,7 +179,7 @@ async function getEventsData(): Promise<EventsResponse> {
  * Replace this with an actual fetch call for production.
  */
 async function getCategoriesData(): Promise<CategoriesResponse> {
-  return import('/src/assets/categories.json') as Promise<CategoriesResponse>
+  return import('../assets/categories.json') as Promise<CategoriesResponse>
 }
 
 /**
