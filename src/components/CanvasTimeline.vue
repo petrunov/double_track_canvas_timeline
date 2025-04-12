@@ -100,8 +100,22 @@ export default defineComponent({
     const scrollX = ref(0)
     const itemWidth = 250
     const isDragging = ref(false)
+    const isTouching = ref(false)
     let dragStartX = 0
     let dragScrollStart = 0
+
+    // --- Variables for touch handling ---
+    let initialTouchX = 0
+    let initialScrollX = 0
+    let lastTouchX = 0
+    let lastTouchTime = 0
+    let currentVelocity = 0
+    let inertiaAnimationFrame: number | null = null
+
+    // --- New variables for throttling touchmove ---
+    let latestTouchX = 0
+    let latestTouchTime = 0
+    let updateRequested = false
 
     // --- Data and Items ---
     const items = ref<Item[]>([])
@@ -142,7 +156,7 @@ export default defineComponent({
     })
     const isIndicatorDragging = ref(false)
 
-    // New variables for touch dragging the indicator
+    // Variables for touch dragging the indicator
     let draggingIndicatorStartX = 0
     let initialIndicatorLeft = 0
 
@@ -338,7 +352,7 @@ export default defineComponent({
       return { indicatorWidth, rawIndicatorLeft }
     }
 
-    // --- Adjust Minimapa Scroll for Parallax Effect ---
+    // --- Adjust Minimap Scroll for Parallax Effect ---
     function adjustMinimapScroll() {
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
       if (!minimapContainer) return
@@ -430,19 +444,6 @@ export default defineComponent({
       document.body.classList.remove('no-select')
     }
 
-    const getScrollPositionForYear = (targetYear: number): number => {
-      if (!items.value.length) return 0
-      const closestIndex = items.value.reduce((prevIndex, currItem, index) => {
-        const currYear = Number(currItem.year_ce)
-        return Math.abs(currYear - targetYear) <
-          Math.abs(Number(items.value[prevIndex].year_ce) - targetYear)
-          ? index
-          : prevIndex
-      }, 0)
-      const targetScroll = closestIndex * itemWidth - (canvasWidth.value - itemWidth) / 2
-      return Math.max(0, Math.min(targetScroll, totalContentWidth.value - canvasWidth.value))
-    }
-
     let draggingIndicatorWidth: number | null = null
 
     // --- Mouse Indicator Drag ---
@@ -486,12 +487,10 @@ export default defineComponent({
       document.body.classList.remove('no-select')
     }
 
-    // --- Updated Touch Indicator Drag ---
+    // --- Touch Indicator Drag for Minimap ---
     const onMinimapIndicatorTouchStart = (e: TouchEvent) => {
       e.stopPropagation()
-
       isIndicatorDragging.value = true
-      // Record initial touch position and indicator left value.
       draggingIndicatorStartX = e.touches[0].clientX
       initialIndicatorLeft = parseFloat(minimapIndicatorStyle.value.left)
       document.addEventListener('touchmove', onMinimapIndicatorTouchMove, { passive: false })
@@ -501,9 +500,7 @@ export default defineComponent({
 
     const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
       if (!isIndicatorDragging.value) return
-      if (isDragging.value) {
-        e.preventDefault()
-      }
+      e.preventDefault()
       const touch = e.touches[0]
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
       if (!minimapContainer) return
@@ -556,39 +553,102 @@ export default defineComponent({
       customSmoothScrollTo(targetScroll, 500)
     }
 
+    // --- Modified Touch Handlers with Throttling ---
     const onTouchStart = (e: TouchEvent) => {
-      if (isDragging.value) {
-        e.preventDefault()
+      if (inertiaAnimationFrame !== null) {
+        cancelAnimationFrame(inertiaAnimationFrame)
+        inertiaAnimationFrame = null
       }
       const touch = e.touches[0]
-      // Disable dragging the minimap container itself; only enable canvas dragging.
-      if ((e.target as HTMLElement).classList.contains('minimap')) return
       isDragging.value = true
-      dragStartX = touch.clientX
-      dragScrollStart = scrollX.value
+      isTouching.value = true
+      initialTouchX = touch.clientX
+      initialScrollX = scrollX.value
+      lastTouchX = touch.clientX
+      lastTouchTime = performance.now()
+      currentVelocity = 0
       document.body.classList.add('no-select')
     }
+
     const onTouchMove = (e: TouchEvent) => {
-      if (isDragging.value) {
-        e.preventDefault()
-      }
-      if (!isDragging.value) return
+      if (!isDragging.value || !isTouching.value) return
+      e.preventDefault() // Prevent native scrolling
+
+      // Update latest touch data
       const touch = e.touches[0]
-      const dx = touch.clientX - dragStartX
-      scrollX.value = Math.max(
-        0,
-        Math.min(dragScrollStart - dx, totalContentWidth.value - canvasWidth.value),
-      )
-      const { indicatorWidth, rawIndicatorLeft } = computeIndicatorGeometry()
-      minimapIndicatorStyle.value = {
-        width: indicatorWidth + 'px',
-        left: rawIndicatorLeft + 'px',
+      latestTouchX = touch.clientX
+      latestTouchTime = performance.now()
+
+      // Schedule a single update per frame
+      if (!updateRequested) {
+        updateRequested = true
+        requestAnimationFrame(processTouchMove)
       }
-      adjustMinimapScroll()
     }
+
+    const processTouchMove = () => {
+      updateRequested = false
+      const currentTime = latestTouchTime
+      const deltaX = latestTouchX - initialTouchX
+      const newScroll = Math.max(
+        0,
+        Math.min(initialScrollX - deltaX, totalContentWidth.value - canvasWidth.value),
+      )
+      scrollX.value = newScroll
+
+      const timeDelta = currentTime - lastTouchTime
+      if (timeDelta > 16) {
+        // roughly 60fps
+        const moveDelta = latestTouchX - lastTouchX
+        currentVelocity = moveDelta / (timeDelta || 1)
+        lastTouchX = latestTouchX
+        lastTouchTime = currentTime
+      }
+
+      // Update minimap indicator geometry
+      if (timeDelta > 64) {
+        const { indicatorWidth, rawIndicatorLeft } = computeIndicatorGeometry()
+        minimapIndicatorStyle.value = {
+          width: indicatorWidth + 'px',
+          left: rawIndicatorLeft + 'px',
+        }
+        adjustMinimapScroll()
+      }
+    }
+
+    const deceleration = 0.015 // Adjust deceleration (pixels per ms²)
+    const inertiaScroll = (initialVelocity: number) => {
+      const startTime = performance.now()
+      const maxScroll = totalContentWidth.value - canvasWidth.value
+      const animate = (now: number) => {
+        const elapsed = now - startTime
+        const velocity = initialVelocity * Math.max(1 - deceleration * elapsed, 0)
+        if (Math.abs(velocity) < 0.02) {
+          inertiaAnimationFrame = null
+          return
+        }
+        scrollX.value = Math.max(0, Math.min(scrollX.value - velocity * 16, maxScroll))
+        const { indicatorWidth, rawIndicatorLeft } = computeIndicatorGeometry()
+        minimapIndicatorStyle.value = {
+          width: indicatorWidth + 'px',
+          left: rawIndicatorLeft + 'px',
+        }
+        adjustMinimapScroll()
+        inertiaAnimationFrame = requestAnimationFrame(animate)
+      }
+      inertiaAnimationFrame = requestAnimationFrame(animate)
+    }
+
     const onTouchEnd = () => {
+      if (!isTouching.value) return
       isDragging.value = false
+      isTouching.value = false
       document.body.classList.remove('no-select')
+
+      // Trigger inertia if velocity is significant
+      if (Math.abs(currentVelocity) > 0.1) {
+        inertiaScroll(currentVelocity * 20)
+      }
     }
 
     onMounted(async () => {
