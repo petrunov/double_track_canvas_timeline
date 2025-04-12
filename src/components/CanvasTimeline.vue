@@ -217,7 +217,8 @@ export default defineComponent({
       return y
     }
 
-    const { drawCanvas, cancelAnimation } = createDrawCanvas(
+    // Use the new canvas module. Note that we assign its return to canvasAPI.
+    const canvasAPI = createDrawCanvas(
       scrollCanvas,
       canvasWidth,
       canvasHeight,
@@ -269,8 +270,8 @@ export default defineComponent({
     ]
     const minimapRectangles = computed<MinimapRectangle[]>(() => {
       if (!groupedItems.value || groupedItems.value.length === 0) return []
-      const minimapItemWidth = 1
-      const leftMargin = 1
+      const minimapItemWidth = 3
+      const leftMargin = 2
       const timescaleHeight = 20
       const minimapTotalHeight = 75
 
@@ -429,20 +430,36 @@ export default defineComponent({
       isDragging.value = true
       dragStartX = e.clientX
       dragScrollStart = scrollX.value
-      // Initialize mouse tracking variables
       mouseLastX = e.clientX
       mouseLastTime = performance.now()
       mouseVelocity = 0
+      // Set cursor to "move" on mousedown
+      if (scrollCanvas.value) {
+        scrollCanvas.value.style.cursor = 'move'
+      }
       document.body.classList.add('no-select')
     }
 
+    const onMouseUp = () => {
+      isDragging.value = false
+      document.body.classList.remove('no-select')
+      // Reset the cursor on mouseup
+      if (scrollCanvas.value) {
+        scrollCanvas.value.style.cursor = 'default'
+      }
+      if (Math.abs(mouseVelocity) > 0.1) {
+        inertiaScroll(mouseVelocity * 10)
+      }
+    }
     const onMouseMove = (e: MouseEvent) => {
       if (!isDragging.value) return
+      if (scrollCanvas.value) {
+        scrollCanvas.value.style.cursor = 'move'
+      }
 
       const now = performance.now()
       const dt = now - mouseLastTime
       if (dt > 16) {
-        // update roughly every frame
         const dx = e.clientX - mouseLastX
         mouseVelocity = dx / (dt || 1)
         mouseLastX = e.clientX
@@ -460,15 +477,6 @@ export default defineComponent({
         left: rawIndicatorLeft + 'px',
       }
       adjustMinimapScroll()
-    }
-    const onMouseUp = () => {
-      isDragging.value = false
-      document.body.classList.remove('no-select')
-      // Trigger inertia on mouse release if the velocity is significant.
-      if (Math.abs(mouseVelocity) > 0.1) {
-        // You can adjust the multiplier (20 here) for longer/shorter inertia.
-        inertiaScroll(mouseVelocity * 10)
-      }
     }
 
     let draggingIndicatorWidth: number | null = null
@@ -591,7 +599,7 @@ export default defineComponent({
     }
     const onTouchMove = (e: TouchEvent) => {
       if (!isDragging.value || !isTouching.value) return
-      e.preventDefault() // Prevent native scrolling
+      e.preventDefault()
       const touch = e.touches[0]
       latestTouchX = touch.clientX
       latestTouchTime = performance.now()
@@ -659,19 +667,40 @@ export default defineComponent({
       }
     }
 
+    // --- Additional: Minimapa container mousemove handler ---
+    const minimapMouseMoveHandler = (event: MouseEvent) => {
+      const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
+      if (minimapContainer) {
+        minimapContainer.style.cursor = isIndicatorDragging.value ? 'grabbing' : 'pointer'
+      }
+    }
+
     onMounted(async () => {
       const result = await getItems()
       items.value = result.items
       groupedItems.value = result.groupedItems
       await nextTick()
       updateDimensions()
-      drawCanvas()
+      // Start the canvas drawing loop using canvasAPI.
+      canvasAPI.drawCanvas()
       if (scrollCanvas.value) {
         scrollCanvas.value.addEventListener('wheel', onWheel, { passive: false })
         scrollCanvas.value.addEventListener('mousedown', onMouseDown)
         scrollCanvas.value.addEventListener('touchstart', onTouchStart, { passive: false })
         scrollCanvas.value.addEventListener('touchmove', onTouchMove, { passive: false })
         scrollCanvas.value.addEventListener('touchend', onTouchEnd, { passive: false })
+        scrollCanvas.value.addEventListener('click', (event) => {
+          if (!scrollCanvas.value) return
+          const rect = scrollCanvas.value.getBoundingClientRect()
+          const canvasX = event.clientX - rect.left
+          const canvasY = event.clientY - rect.top
+          // Use the hitTest method from canvasAPI.
+          const hit = canvasAPI.hitTest(canvasX, canvasY)
+          if (hit) {
+            // For demonstration, we use alert(); replace with modal opening logic as needed.
+            alert(JSON.stringify(hit.data, null, 2))
+          }
+        })
       }
       const minimapIndicatorElement = document.querySelector(
         '.minimap-indicator',
@@ -693,6 +722,8 @@ export default defineComponent({
           },
           { passive: false },
         )
+        // Add a mousemove listener on the minimap container to update its cursor.
+        minimapContainer.addEventListener('mousemove', minimapMouseMoveHandler)
       }
     })
     onUnmounted(() => {
@@ -712,7 +743,11 @@ export default defineComponent({
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('resize', updateDimensions)
-      cancelAnimation()
+      const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
+      if (minimapContainer) {
+        minimapContainer.removeEventListener('mousemove', minimapMouseMoveHandler)
+      }
+      canvasAPI.cancelAnimation()
     })
     watch(
       () => scrollX.value,
@@ -776,6 +811,7 @@ export default defineComponent({
   background-color: var(--color-background-soft);
   border-top: 1px solid var(--color-border);
   scrollbar-width: none;
+  cursor: pointer;
 }
 .minimap-container::-webkit-scrollbar {
   display: none;
@@ -821,6 +857,7 @@ export default defineComponent({
   height: 100%;
   box-sizing: border-box;
   background-color: rgba(235, 235, 235, 0.5);
+  cursor: grab;
 }
 .minimap-indicator .crosshair-lines {
   position: absolute;

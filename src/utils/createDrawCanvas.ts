@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import type { YearGroup } from '@/services/dataService'
 
+// Preload item images.
 const itemImages: HTMLImageElement[] = []
 itemImages[0] = new Image()
 itemImages[0].src = new URL('@/assets/item-image.jfif', import.meta.url).href
@@ -28,6 +29,12 @@ function lerp(start: number, end: number, amt: number): number {
   return start + (end - start) * amt
 }
 
+/**
+ * createDrawCanvas is responsible for drawing the timeline on the canvas.
+ * In addition to drawing, it builds an array of hitAreas with bounding boxes
+ * for each drawn item so that click (or tap) events can determine which item
+ * was clicked.
+ */
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
@@ -49,12 +56,24 @@ export function createDrawCanvas(
   drawCanvas: () => void
   cancelAnimation: () => void
   updateTransforms: () => { indicatorWidth: number; indicatorLeft: number }
+  hitTest: (x: number, y: number) => { id: string; data: any } | null
 } {
   const EFFECTIVE_WIDTH_OFFSET = 2
   const REFERENCE_SINGLE_ITEM_HEIGHT = 90
   const MIN_SCREEN_WIDTH = 320
   const REFERENCE_MAX_SCREEN_WIDTH = 1920
   const MIN_INDICATOR_WIDTH = 10
+
+  // This array will hold the bounding boxes of drawn items.
+  // For performance, we only store information for items that are visible.
+  const hitAreas: Array<{
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    data: any
+  }> = []
 
   const getScaleFactor = () => {
     const clampedWidth = Math.max(
@@ -92,10 +111,9 @@ export function createDrawCanvas(
   }
 
   const fadeProgress = new Map<string, number>()
-  const FADING_SPEED = 0.04 // pick a value that feels right
+  const FADING_SPEED = 0.04 // adjust as needed
 
   const updateFadeProgress = (itemId: string) => {
-    // Use the faster increment
     const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + FADING_SPEED)
     fadeProgress.set(itemId, progress)
 
@@ -196,6 +214,7 @@ export function createDrawCanvas(
     ctx.save()
     ctx.translate(offsetX, offsetY)
 
+    // Draw each item and record its hit area.
     const drawOneItem = (item: any, y: number, rectHeight: number) => {
       const visible = categoryFilter.value[item.category || ''] !== false
       const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
@@ -203,6 +222,8 @@ export function createDrawCanvas(
       ctx.save()
       ctx.globalAlpha = effectiveAlpha
       applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
+
+      // Retrieve an image based on a hash of the id.
       const image = itemImages[Math.abs(hashCode(item.id)) % itemImages.length]
       drawRectWithText(
         ctx,
@@ -215,6 +236,7 @@ export function createDrawCanvas(
         items.length > 1,
         image,
       )
+      // Draw a top indicator.
       const topIndicatorHeight = 5 * globalScale
       const getCategoryColor = (category: string): string => {
         const keys = Object.keys(categoryFilter.value).sort()
@@ -233,6 +255,21 @@ export function createDrawCanvas(
       ctx.fillStyle = getCategoryColor(item.category || '')
       ctx.fillRect(0, y, effectiveItemWidth - 10, topIndicatorHeight)
       ctx.restore()
+
+      // Record a hit area for later click detection.
+      // The absolute X and Y are computed from the translated coordinates.
+      const absX = offsetX // offsetX is the absolute x position (group's position).
+      const absY = offsetY + y
+      if (visible) {
+        hitAreas.push({
+          id: item.id,
+          x: absX,
+          y: absY,
+          width: effectiveItemWidth - 10,
+          height: rectHeight,
+          data: item,
+        })
+      }
     }
 
     if (items.length === 1) {
@@ -325,6 +362,9 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
+    // Clear hit areas before drawing each frame.
+    hitAreas.length = 0
+
     const globalScale = getScaleFactor()
     const effectiveItemWidth = itemWidth * globalScale + EFFECTIVE_WIDTH_OFFSET
     const totalColumns = groupedItems.value.reduce((sum, yg) => sum + yg.groups.length, 0)
@@ -345,6 +385,7 @@ export function createDrawCanvas(
       yearGroup.groups.forEach((groupColumn) => {
         const x = flatColumnIndex * effectiveItemWidth - currentScrollX
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
+          // Draw the two tracks (tamil and world) and record hit areas.
           drawTrack(
             ctx,
             groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
@@ -394,9 +435,21 @@ export function createDrawCanvas(
     return { indicatorWidth, indicatorLeft }
   }
 
+  // hitTest takes canvas coordinate (x, y) and returns the first hit item or null.
+  const hitTest = (x: number, y: number) => {
+    // For performance, you might later use a spatial index if hitAreas grows large.
+    for (const area of hitAreas) {
+      if (x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) {
+        return { id: area.id, data: area.data }
+      }
+    }
+    return null
+  }
+
   return {
     drawCanvas,
     cancelAnimation: () => cancelAnimationFrame(animationFrameId),
     updateTransforms,
+    hitTest,
   }
 }
