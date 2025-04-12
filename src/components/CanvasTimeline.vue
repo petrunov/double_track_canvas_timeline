@@ -489,6 +489,7 @@ export default defineComponent({
     // --- Updated Touch Indicator Drag ---
     const onMinimapIndicatorTouchStart = (e: TouchEvent) => {
       e.stopPropagation()
+
       isIndicatorDragging.value = true
       // Record initial touch position and indicator left value.
       draggingIndicatorStartX = e.touches[0].clientX
@@ -500,7 +501,9 @@ export default defineComponent({
 
     const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
       if (!isIndicatorDragging.value) return
-      e.preventDefault()
+      if (isDragging.value) {
+        e.preventDefault()
+      }
       const touch = e.touches[0]
       const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
       if (!minimapContainer) return
@@ -554,6 +557,9 @@ export default defineComponent({
     }
 
     const onTouchStart = (e: TouchEvent) => {
+      if (isDragging.value) {
+        e.preventDefault()
+      }
       const touch = e.touches[0]
       // Disable dragging the minimap container itself; only enable canvas dragging.
       if ((e.target as HTMLElement).classList.contains('minimap')) return
@@ -563,6 +569,9 @@ export default defineComponent({
       document.body.classList.add('no-select')
     }
     const onTouchMove = (e: TouchEvent) => {
+      if (isDragging.value) {
+        e.preventDefault()
+      }
       if (!isDragging.value) return
       const touch = e.touches[0]
       const dx = touch.clientX - dragStartX
@@ -690,6 +699,7 @@ export default defineComponent({
   background-repeat: no-repeat;
   background-position: center;
   cursor: default;
+  touch-action: none;
 }
 .minimap-container {
   position: fixed;

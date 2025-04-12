@@ -92,16 +92,20 @@ export function createDrawCanvas(
   }
 
   const fadeProgress = new Map<string, number>()
+  const FADING_SPEED = 0.04 // pick a value that feels right
+
   const updateFadeProgress = (itemId: string) => {
-    const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + 0.01)
+    // Use the faster increment
+    const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + FADING_SPEED)
     fadeProgress.set(itemId, progress)
+
     const alpha = progress
     const fadeScale = 0.5 + progress * 0.5
     const offsetX = (1 - progress) * 20
     const offsetY = (1 - progress) * -30
+
     return { alpha, fadeScale, offsetX, offsetY }
   }
-
   const applyFadeTransform = (
     ctx: CanvasRenderingContext2D,
     fadeScale: number,
