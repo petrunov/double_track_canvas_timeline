@@ -347,6 +347,7 @@ export default defineComponent({
       const { rawIndicatorLeft, indicatorWidth } = computeIndicatorGeometry()
       const desiredScrollLeft =
         (rawIndicatorLeft / (extendedWidth - indicatorWidth)) * (extendedWidth - containerWidth)
+
       minimapContainer.scrollLeft = desiredScrollLeft
     }
 
@@ -354,7 +355,7 @@ export default defineComponent({
     const updateDimensions = () => {
       canvasWidth.value = window.innerWidth
       canvasHeight.value = window.innerHeight - 90
-      minimapWidth.value = window.innerWidth * 2.5
+      minimapWidth.value = window.innerWidth * 1.5
       if (scrollCanvas.value) {
         scrollCanvas.value.width = canvasWidth.value
         scrollCanvas.value.height = canvasHeight.value
@@ -496,26 +497,35 @@ export default defineComponent({
       document.addEventListener('touchend', onMinimapIndicatorTouchEnd, { passive: false })
       document.body.classList.add('no-select')
     }
-    // Updated touch move: immediate update without throttling
+
     const onMinimapIndicatorTouchMove = (e: TouchEvent) => {
       if (!isIndicatorDragging.value) return
       e.preventDefault()
       const touch = e.touches[0]
-      const deltaX = touch.clientX - draggingIndicatorStartX
-      let newExtendedIndicatorLeft = initialIndicatorLeft + deltaX
+      const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
+      if (!minimapContainer) return
+
+      const extendedWidth = minimapWidth.value
       const indicatorWidth = parseFloat(minimapIndicatorStyle.value.width)
+      const containerRect = minimapContainer.getBoundingClientRect()
+      const extendedTouchX = touch.clientX - containerRect.left + minimapContainer.scrollLeft
+
+      let newExtendedIndicatorLeft = extendedTouchX - indicatorWidth / 2
       newExtendedIndicatorLeft = Math.max(
         0,
-        Math.min(newExtendedIndicatorLeft, minimapWidth.value - indicatorWidth),
+        Math.min(newExtendedIndicatorLeft, extendedWidth - indicatorWidth),
       )
-      // Update immediately so that the indicator follows the finger
+
       minimapIndicatorStyle.value.left = newExtendedIndicatorLeft + 'px'
+
       const maxScroll = totalContentWidth.value - canvasWidth.value
-      const maxIndicatorTravel = minimapWidth.value - indicatorWidth
+      const maxIndicatorTravel = extendedWidth - indicatorWidth
       const ratio = newExtendedIndicatorLeft / maxIndicatorTravel
       scrollX.value = ratio * maxScroll
+
       adjustMinimapScroll()
     }
+
     const onMinimapIndicatorTouchEnd = () => {
       isIndicatorDragging.value = false
       document.removeEventListener('touchmove', onMinimapIndicatorTouchMove)
@@ -597,6 +607,17 @@ export default defineComponent({
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
       window.addEventListener('resize', updateDimensions)
+
+      const minimapContainer = document.querySelector('.minimap-container') as HTMLElement | null
+      if (minimapContainer) {
+        minimapContainer.addEventListener(
+          'touchmove',
+          (e) => {
+            e.preventDefault()
+          },
+          { passive: false },
+        )
+      }
     })
 
     onUnmounted(() => {
