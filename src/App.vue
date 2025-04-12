@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import CanvasTimeline from './components/CanvasTimeline.vue'
 </script>
 
 <template>
-  <RouterView />
+  <CanvasTimeline />
 </template>
