@@ -703,10 +703,10 @@ export default defineComponent({
   width: 1px;
 }
 .tick.major .tick-mark {
-  height: 10px;
+  height: 4px;
 }
 .tick.medium .tick-mark {
-  height: 7px;
+  height: 4px;
 }
 .tick.minor .tick-mark {
   height: 4px;

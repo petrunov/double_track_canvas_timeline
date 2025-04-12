@@ -24,6 +24,25 @@ export function createDrawCanvas(
   cancelAnimation: () => void
   updateTransforms: () => { indicatorWidth: number; indicatorLeft: number }
 } {
+  const itemImages: string | any[] = []
+  itemImages[0] = new Image()
+  itemImages[0].src = new URL('@/assets/item-image.jfif', import.meta.url).href
+
+  itemImages[1] = new Image()
+  itemImages[1].src = new URL('@/assets/item-image2.jfif', import.meta.url).href
+
+  itemImages[2] = new Image()
+  itemImages[2].src = new URL('@/assets/item-image3.jfif', import.meta.url).href
+
+  itemImages[3] = new Image()
+  itemImages[3].src = new URL('@/assets/item-image4.webp', import.meta.url).href
+
+  itemImages[4] = new Image()
+  itemImages[4].src = new URL('@/assets/item-image5.jpg', import.meta.url).href
+
+  itemImages[5] = new Image()
+  itemImages[5].src = new URL('@/assets/item-image6.avif', import.meta.url).href
+
   // --- Constants & Helper Definitions ---
   const EFFECTIVE_WIDTH_OFFSET = 2
   const REFERENCE_SINGLE_ITEM_HEIGHT = 90 // For a single item before scaling
@@ -110,6 +129,15 @@ export function createDrawCanvas(
     return txt + '...'
   }
 
+  const hashCode = function (str: string): number {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i)
+      hash |= 0 // Convert to 32bit integer
+    }
+    return hash
+  }
+
   const drawRectWithText = (
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -119,27 +147,57 @@ export function createDrawCanvas(
     height: number,
     globalScale: number,
     isMulti: boolean,
+    image: HTMLImageElement,
   ) => {
     const REFERENCE_TEXT_MARGIN = 5
     const REFERENCE_BASE_FONT_SIZE = 14
     const REFERENCE_LINE_HEIGHT_MULTIPLIER = 20
     const REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET = 30
+    const IMAGE_WIDTH = 60 * globalScale // previously was IMAGE_WIDTH = 40
+    const TEXT_START_X = x + IMAGE_WIDTH + 2 * REFERENCE_TEXT_MARGIN * globalScale
+
+    // Background
     ctx.fillStyle = 'rgba(255,255,255,0.8)'
     ctx.fillRect(x, y, width, height)
+
+    // Square image crop from top-center
+    if (image.complete) {
+      const IMAGE_SIZE = 60 * globalScale
+      const margin = REFERENCE_TEXT_MARGIN * globalScale
+      const imageX = x + margin
+      const imageY = y + (height - IMAGE_SIZE) / 2
+
+      // Crop from top-center of the image
+      const naturalSize = Math.min(image.naturalWidth, image.naturalHeight)
+      const cropSize = naturalSize
+      const sx = (image.naturalWidth - cropSize) / 2
+      const sy = 0
+      const sWidth = cropSize
+      const sHeight = cropSize
+
+      ctx.drawImage(image, sx, sy, sWidth, sHeight, imageX, imageY, IMAGE_SIZE, IMAGE_SIZE)
+    }
+
+    // Text
     ctx.fillStyle = '#000'
     ctx.font = `bold ${REFERENCE_BASE_FONT_SIZE * globalScale}px sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
+
     if (isMulti) {
-      const clippedTitle = clipText(ctx, text, width - 2 * (REFERENCE_TEXT_MARGIN * globalScale))
-      ctx.fillText(clippedTitle, x + REFERENCE_TEXT_MARGIN * globalScale, y + height / 2)
+      const clippedTitle = clipText(
+        ctx,
+        text,
+        width - IMAGE_WIDTH - 3 * (REFERENCE_TEXT_MARGIN * globalScale),
+      )
+      ctx.fillText(clippedTitle, TEXT_START_X, y + height / 2)
     } else {
       wrapText(
         ctx,
         text,
-        x + REFERENCE_TEXT_MARGIN * globalScale,
+        TEXT_START_X,
         y + REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET * globalScale,
-        width - 2 * (REFERENCE_TEXT_MARGIN * globalScale),
+        width - IMAGE_WIDTH - 3 * (REFERENCE_TEXT_MARGIN * globalScale),
         REFERENCE_LINE_HEIGHT_MULTIPLIER * globalScale,
       )
     }
@@ -177,7 +235,9 @@ export function createDrawCanvas(
         rectHeight,
         globalScale,
         items.length > 1,
+        itemImages[Math.abs(hashCode(item.id)) % itemImages.length],
       )
+
       // Draw the top category indicator
       const topIndicatorHeight = 5 * globalScale
       const getCategoryColor = (category: string): string => {
