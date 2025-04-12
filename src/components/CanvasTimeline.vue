@@ -701,6 +701,13 @@ export default defineComponent({
             alert(JSON.stringify(hit.data, null, 2))
           }
         })
+        scrollCanvas.value.addEventListener('mousemove', (event: MouseEvent) => {
+          const rect = scrollCanvas.value!.getBoundingClientRect()
+          const canvasX = event.clientX - rect.left
+          const canvasY = event.clientY - rect.top
+          const hit = canvasAPI.hitTest(canvasX, canvasY)
+          scrollCanvas.value!.style.cursor = hit ? 'pointer' : 'default'
+        })
       }
       const minimapIndicatorElement = document.querySelector(
         '.minimap-indicator',
