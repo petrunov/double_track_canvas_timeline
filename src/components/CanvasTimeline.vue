@@ -250,7 +250,7 @@ export default defineComponent({
     ]
     const minimapRectangles = computed<MinimapRectangle[]>(() => {
       if (!groupedItems.value || groupedItems.value.length === 0) return []
-      const minimapItemWidth = 3
+      const minimapItemWidth = 1
       const leftMargin = 1
       const timescaleHeight = 20
       const minimapTotalHeight = 75
@@ -354,7 +354,7 @@ export default defineComponent({
     const updateDimensions = () => {
       canvasWidth.value = window.innerWidth
       canvasHeight.value = window.innerHeight - 90
-      minimapWidth.value = window.innerWidth * 1.5
+      minimapWidth.value = window.innerWidth * 2.5
       if (scrollCanvas.value) {
         scrollCanvas.value.width = canvasWidth.value
         scrollCanvas.value.height = canvasHeight.value
