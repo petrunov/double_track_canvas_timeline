@@ -732,12 +732,6 @@ export default defineComponent({
         // Add a mousemove listener on the minimap container to update its cursor.
         minimapContainer.addEventListener('mousemove', minimapMouseMoveHandler)
       }
-
-      const parallaxFactor = 0.1
-      if (scrollCanvas.value) {
-        const offset = -scrollX.value * parallaxFactor
-        scrollCanvas.value.style.setProperty('--bg-position', `${offset}px center`)
-      }
     })
     onUnmounted(() => {
       if (scrollCanvas.value) {
@@ -762,17 +756,25 @@ export default defineComponent({
       }
       canvasAPI.cancelAnimation()
     })
+    let scheduled = false
     watch(
       () => scrollX.value,
       () => {
-        adjustMinimapScroll()
-        const parallaxFactor = 0.1
-        if (scrollCanvas.value) {
-          const offset = -scrollX.value * parallaxFactor
-          scrollCanvas.value.style.setProperty('--bg-position', `${offset}px center`)
+        if (!scheduled) {
+          scheduled = true
+          requestAnimationFrame(() => {
+            adjustMinimapScroll()
+            const parallaxFactor = 0.1
+            if (scrollCanvas.value) {
+              const offset = -scrollX.value * parallaxFactor
+              scrollCanvas.value.style.setProperty('--bg-position', `${offset}px center`)
+            }
+            scheduled = false
+          })
         }
       },
     )
+
     return {
       items,
       groupedItems,
