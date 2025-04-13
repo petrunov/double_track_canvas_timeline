@@ -694,11 +694,16 @@ export default defineComponent({
           const rect = scrollCanvas.value.getBoundingClientRect()
           const canvasX = event.clientX - rect.left
           const canvasY = event.clientY - rect.top
+          const canvasRect = scrollCanvas.value!.getBoundingClientRect()
+          const clickX = event.clientX - canvasRect.left
+          const clickY = event.clientY - canvasRect.top
           // Use the hitTest method from canvasAPI.
           const hit = canvasAPI.hitTest(canvasX, canvasY)
           if (hit) {
-            // For demonstration, we use alert(); replace with modal opening logic as needed.
-            alert(JSON.stringify(hit.data, null, 2))
+            const itemArea = canvasAPI.hitAreas.find((area) => area.id === hit.id)!
+            const relativeX = clickX - itemArea.x
+            const relativeY = clickY - itemArea.y
+            canvasAPI.highlightItem(hit.id, relativeX, relativeY)
           }
         })
         scrollCanvas.value.addEventListener('mousemove', (event: MouseEvent) => {

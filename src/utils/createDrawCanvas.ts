@@ -30,10 +30,40 @@ function lerp(start: number, end: number, amt: number): number {
 }
 
 /**
+ * Utility: convert a hex color (e.g. "#f44336") to an rgba string using the provided alpha.
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  let r = 0,
+    g = 0,
+    b = 0
+  // Handle shorthand hex form (#f43)
+  if (hex.length === 4) {
+    r = parseInt(hex[1] + hex[1], 16)
+    g = parseInt(hex[2] + hex[2], 16)
+    b = parseInt(hex[3] + hex[3], 16)
+  } else if (hex.length === 7) {
+    r = parseInt(hex.slice(1, 3), 16)
+    g = parseInt(hex.slice(3, 5), 16)
+    b = parseInt(hex.slice(5, 7), 16)
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// Define a type for the click (ripple) effect.
+type ClickEffect = {
+  startTime: number
+  clickX: number
+  clickY: number
+}
+
+/**
  * createDrawCanvas is responsible for drawing the timeline on the canvas.
  * In addition to drawing, it builds an array of hitAreas with bounding boxes
- * for each drawn item so that click (or tap) events can determine which item
- * was clicked.
+ * for each drawn item so that click events can determine which item was clicked.
+ * It now supports two effects:
+ *  1. A ripple effect: when an item is clicked, calling highlightItem(itemId, clickX, clickY)
+ *     shows a ripple that starts at the click spot and fades out over a set duration.
+ *  2. A “pop” effect: the item scales up briefly (pops) on hit and then returns to normal.
  */
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
@@ -57,6 +87,15 @@ export function createDrawCanvas(
   cancelAnimation: () => void
   updateTransforms: () => { indicatorWidth: number; indicatorLeft: number }
   hitTest: (x: number, y: number) => { id: string; data: any } | null
+  highlightItem: (itemId: string, clickX: number, clickY: number) => void
+  hitAreas: Array<{
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    data: unknown
+  }>
 } {
   const EFFECTIVE_WIDTH_OFFSET = 2
   const REFERENCE_SINGLE_ITEM_HEIGHT = 90
@@ -65,7 +104,7 @@ export function createDrawCanvas(
   const MIN_INDICATOR_WIDTH = 10
 
   // This array will hold the bounding boxes of drawn items.
-  // For performance, we only store information for items that are visible.
+  // Only items drawn (and visible) are added.
   const hitAreas: Array<{
     id: string
     x: number
@@ -74,6 +113,17 @@ export function createDrawCanvas(
     height: number
     data: any
   }> = []
+
+  // This map stores the click effect for an item.
+  // A ripple effect (and pop effect) will be rendered for HIGHLIGHT_DURATION ms after calling highlightItem.
+  const clickEffects = new Map<string, ClickEffect>()
+  const HIGHLIGHT_DURATION = 300 // duration in ms
+
+  // Call this function to trigger a ripple and pop effect on an item.
+  // The caller must supply the click coordinates (relative to the item).
+  const highlightItem = (itemId: string, clickX: number, clickY: number) => {
+    clickEffects.set(itemId, { startTime: performance.now(), clickX, clickY })
+  }
 
   const getScaleFactor = () => {
     const clampedWidth = Math.max(
@@ -118,6 +168,7 @@ export function createDrawCanvas(
     fadeProgress.set(itemId, progress)
 
     const alpha = progress
+    // This fadeScale determines the transformation of the item’s background.
     const fadeScale = 0.5 + progress * 0.5
     const offsetX = (1 - progress) * 20
     const offsetY = (1 - progress) * -30
@@ -147,6 +198,8 @@ export function createDrawCanvas(
     return txt + '...'
   }
 
+  // Draws the background white box (representing an item) with a neat drop shadow,
+  // then draws its image and text. No text shadow is applied.
   const drawRectWithText = (
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -169,9 +222,17 @@ export function createDrawCanvas(
     const imageY = y + (height - IMAGE_SIZE) / 2
     const TEXT_START_X = imageX + IMAGE_SIZE + margin
 
+    // Draw the background white box with drop shadow.
+    ctx.save()
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowBlur = 6
+    ctx.shadowOffsetX = 1
+    ctx.shadowOffsetY = 1
     ctx.fillStyle = 'rgba(255,255,255,1)'
     ctx.fillRect(x, y, width, height)
+    ctx.restore()
 
+    // Draw the image if it's loaded.
     if (image?.complete) {
       const cropSize = Math.min(image.naturalWidth, image.naturalHeight)
       const sx = (image.naturalWidth - cropSize) / 2
@@ -179,11 +240,11 @@ export function createDrawCanvas(
       ctx.drawImage(image, sx, sy, cropSize, cropSize, imageX, imageY, IMAGE_SIZE, IMAGE_SIZE)
     }
 
+    // Draw the text normally without a text shadow.
     ctx.fillStyle = '#000'
     ctx.font = `bold ${REFERENCE_BASE_FONT_SIZE * globalScale}px sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-
     if (isMulti) {
       const clippedTitle = clipText(ctx, text, width - (TEXT_START_X - x) - margin)
       ctx.fillText(clippedTitle, TEXT_START_X, y + height / 2)
@@ -199,6 +260,7 @@ export function createDrawCanvas(
     }
   }
 
+  // drawTrack draws a track of items and records each drawn item’s bounding box in hitAreas.
   const drawTrack = (
     ctx: CanvasRenderingContext2D,
     items: { id: string; tamil_heading?: string; english_heading?: string; category?: string }[],
@@ -218,12 +280,25 @@ export function createDrawCanvas(
     const drawOneItem = (item: any, y: number, rectHeight: number) => {
       const visible = categoryFilter.value[item.category || ''] !== false
       const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
-      const effectiveAlpha = visible ? alpha : 0
       ctx.save()
-      ctx.globalAlpha = effectiveAlpha
+      ctx.globalAlpha = visible ? alpha : 0
       applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
 
-      // Retrieve an image based on a hash of the id.
+      // If this item is clicked, apply a pop effect:
+      // Compute progress (0 to 1) and use a simple easing function that peaks at progress=0.5.
+      if (clickEffects.has(item.id)) {
+        const effect = clickEffects.get(item.id)!
+        const elapsed = performance.now() - effect.startTime
+        const progress = Math.min(1, elapsed / HIGHLIGHT_DURATION)
+        // popScale goes from 1.0 at progress=0 and 1.0 at progress=1 with a peak at 1.1 at progress=0.5.
+        const popScale = 1 + 0.1 * (1 - Math.abs(progress - 0.5) * 2.5)
+        const centerX = (effectiveItemWidth - 10) / 2
+        const centerY = y + rectHeight / 2
+        ctx.translate(centerX, centerY)
+        ctx.scale(popScale, popScale)
+        ctx.translate(-centerX, -centerY)
+      }
+
       const image = itemImages[Math.abs(hashCode(item.id)) % itemImages.length]
       drawRectWithText(
         ctx,
@@ -256,9 +331,8 @@ export function createDrawCanvas(
       ctx.fillRect(0, y, effectiveItemWidth - 10, topIndicatorHeight)
       ctx.restore()
 
-      // Record a hit area for later click detection.
-      // The absolute X and Y are computed from the translated coordinates.
-      const absX = offsetX // offsetX is the absolute x position (group's position).
+      // Record a hit area (using absolute coordinates).
+      const absX = offsetX
       const absY = offsetY + y
       if (visible) {
         hitAreas.push({
@@ -269,6 +343,42 @@ export function createDrawCanvas(
           height: rectHeight,
           data: item,
         })
+      }
+
+      // Instead of drawing a solid overlay, draw a ripple effect.
+      if (clickEffects.has(item.id)) {
+        const effect = clickEffects.get(item.id)!
+        const elapsed = performance.now() - effect.startTime
+        const progress = elapsed / HIGHLIGHT_DURATION
+        if (progress < 1) {
+          ctx.save()
+          // Set a clipping region to confine the ripple effect within the item.
+          ctx.beginPath()
+          ctx.rect(0, y, effectiveItemWidth - 10, rectHeight)
+          ctx.clip()
+
+          const rectWidth = effectiveItemWidth - 10
+          // Use provided click coordinates relative to the item.
+          const localX = effect.clickX
+          const localY = effect.clickY
+          // Calculate the maximum radius from the click point to the item's corners.
+          const dx = Math.max(localX, rectWidth - localX)
+          const dy = Math.max(localY, rectHeight - localY)
+          const maxRadius = Math.sqrt(dx * dx + dy * dy)
+          const radius = progress * maxRadius
+          // Fade the ripple's opacity from 0.3 to 0.
+          const rippleAlpha = 0.3 * (1 - progress)
+          ctx.beginPath()
+          // Draw ripple using the item-relative coordinates.
+          ctx.arc(localX, y + localY, radius, 0, Math.PI * 2)
+          // Use the category-dependent color and convert it to RGBA.
+          const baseColor = getCategoryColor(item.category || '')
+          ctx.fillStyle = hexToRgba(baseColor, rippleAlpha)
+          ctx.fill()
+          ctx.restore()
+        } else {
+          clickEffects.delete(item.id)
+        }
       }
     }
 
@@ -312,6 +422,11 @@ export function createDrawCanvas(
           ctx.font = `${14 * globalScale}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
+          // Apply a neat shadow for the year labels.
+          ctx.shadowColor = 'rgba(0,0,0,0.2)'
+          ctx.shadowBlur = 2
+          ctx.shadowOffsetX = 1
+          ctx.shadowOffsetY = 1
           ctx.fillStyle = '#000'
           ctx.fillText(
             `${year}`,
@@ -362,7 +477,7 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Clear hit areas before drawing each frame.
+    // Clear hit areas each frame.
     hitAreas.length = 0
 
     const globalScale = getScaleFactor()
@@ -385,7 +500,6 @@ export function createDrawCanvas(
       yearGroup.groups.forEach((groupColumn) => {
         const x = flatColumnIndex * effectiveItemWidth - currentScrollX
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
-          // Draw the two tracks (tamil and world) and record hit areas.
           drawTrack(
             ctx,
             groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
@@ -435,9 +549,8 @@ export function createDrawCanvas(
     return { indicatorWidth, indicatorLeft }
   }
 
-  // hitTest takes canvas coordinate (x, y) and returns the first hit item or null.
+  // hitTest returns the first hit item for a given canvas coordinate.
   const hitTest = (x: number, y: number) => {
-    // For performance, you might later use a spatial index if hitAreas grows large.
     for (const area of hitAreas) {
       if (x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) {
         return { id: area.id, data: area.data }
@@ -451,5 +564,7 @@ export function createDrawCanvas(
     cancelAnimation: () => cancelAnimationFrame(animationFrameId),
     updateTransforms,
     hitTest,
+    highlightItem,
+    hitAreas,
   }
 }
