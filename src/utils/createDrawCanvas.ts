@@ -110,8 +110,8 @@ export function createDrawCanvas(
   }>
 } {
   const EFFECTIVE_WIDTH_OFFSET = 2
-  const REFERENCE_SINGLE_ITEM_HEIGHT = 90
-  const REFERENCE_MULTI_ITEM_HEIGHT = 90
+  const REFERENCE_SINGLE_ITEM_HEIGHT = 120
+  const REFERENCE_MULTI_ITEM_HEIGHT = 120
   const MIN_SCREEN_WIDTH = 320
   const REFERENCE_MAX_SCREEN_WIDTH = 1920
   const MIN_INDICATOR_WIDTH = 10
@@ -161,6 +161,9 @@ export function createDrawCanvas(
    * so items can anchor themselves.
    */
   function getLayoutParams(globalScale: number) {
+    // We introduce a SHIFT constant:
+    const SHIFT = 15
+
     // The total vertical space for the timeline, leaving a 14px gap at bottom for minimap.
     const timelineHeight = canvasHeight.value - MINIMAP_MARGIN
 
@@ -169,10 +172,7 @@ export function createDrawCanvas(
     const worldTrackHeight = timelineHeight - tamilTrackHeight // ~34%
 
     // BOTTOM (Tamil) track:
-    // We treat it as spanning from (timelineHeight - tamilTrackHeight) up to timelineHeight.
-    // So the bottom lane is near timelineHeight (the very bottom), minus some margin.
     const tamilTrackTop = worldTrackHeight
-    // We'll define some margin for the top/bottom:
     const bottomMargin = 10
     const trackMargin = tamilTrackHeight * 0.05
     const trackContentHeight = tamilTrackHeight - trackMargin - bottomMargin
@@ -184,28 +184,27 @@ export function createDrawCanvas(
     const tamilTrackAnchorY = tamilLaneY - EXTRA_SPACE_BELOW_LANE
 
     // TOP (World) track:
-    // It occupies from y=0 down to worldTrackHeight.
-    // We'll define a margin, place a lane near the bottom, etc.
     const topMargin = worldTrackHeight * 0.05
     const topContentHeight = worldTrackHeight - topMargin - bottomMargin
     const worldLaneY = topMargin + topContentHeight - yearLaneHeight
     const worldTrackAnchorY = worldLaneY - EXTRA_SPACE_BELOW_LANE
 
+    // Finally, add SHIFT to every y-based value to move everything down 15px.
     return {
       timelineHeight,
       yearLaneHeight,
       EXTRA_SPACE_BELOW_LANE,
 
-      // Tamil track:
-      tamilTrackTop,
-      tamilLaneY,
-      tamilTrackAnchorY,
+      // Tamil track (shifted 15px):
+      tamilTrackTop: tamilTrackTop + SHIFT,
+      tamilLaneY: tamilLaneY + SHIFT,
+      tamilTrackAnchorY: tamilTrackAnchorY + SHIFT,
       tamilTrackHeight,
 
-      // World track:
+      // World track (shifted 15px):
       worldTrackHeight,
-      worldLaneY,
-      worldTrackAnchorY,
+      worldLaneY: worldLaneY + SHIFT,
+      worldTrackAnchorY: worldTrackAnchorY + SHIFT,
     }
   }
 
