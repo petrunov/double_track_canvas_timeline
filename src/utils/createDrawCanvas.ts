@@ -135,18 +135,16 @@ export function createDrawCanvas(
     clickEffects.set(itemId, { startTime: performance.now(), clickX, clickY })
   }
   function getScaleFactor() {
-    // Use the smaller of the two dimensions:
-    const minDim = Math.min(canvasWidth.value, canvasHeight.value)
-
-    // Now clamp that between MIN_SCREEN_WIDTH and REFERENCE_MAX_SCREEN_WIDTH
-    const clampedMinDim = Math.max(MIN_SCREEN_WIDTH, Math.min(minDim, REFERENCE_MAX_SCREEN_WIDTH))
-
-    // The rest stays exactly as before:
+    // If your horizontal dimension is what should determine item scale:
+    const clampedWidth = Math.max(
+      MIN_SCREEN_WIDTH,
+      Math.min(canvasWidth.value, REFERENCE_MAX_SCREEN_WIDTH),
+    )
     const ratio =
-      (clampedMinDim - MIN_SCREEN_WIDTH) / (REFERENCE_MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
+      (clampedWidth - MIN_SCREEN_WIDTH) / (REFERENCE_MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
 
-    const MIN_SCALE = 0.8
-    const MAX_SCALE = 1.2
+    const MIN_SCALE = 0.8,
+      MAX_SCALE = 1.2
 
     return MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
   }
