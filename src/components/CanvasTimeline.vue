@@ -299,9 +299,9 @@ export default defineComponent({
           const minimapX =
             leftMargin + (rawX / fullTimelineWidth) * (minimapWidth.value - 2 * leftMargin)
 
-          // --- Tamil Track (upper track) ---
-          groupColumn.tamil.forEach((item, rowIndex) => {
-            const totalItems = groupColumn.tamil.length
+          // --- World Track (lower track) ---
+          groupColumn.world.forEach((item, rowIndex) => {
+            const totalItems = groupColumn.world.length
             const invertedRow = rowCount - totalItems + rowIndex
             const top = timescaleHeight + invertedRow * rowHeight - 10
             rectangles.push({
@@ -314,14 +314,14 @@ export default defineComponent({
                 const index = keys.indexOf(item.category)
                 return colorPalette[index % colorPalette.length]
               })(),
-              title: item.tamil_heading,
+              title: item.english_heading,
               category: item.category,
             })
           })
 
-          // --- World Track (lower track) ---
-          groupColumn.world.forEach((item, rowIndex) => {
-            const totalItems = groupColumn.world.length
+          // --- Tamil Track (upper track) ---
+          groupColumn.tamil.forEach((item, rowIndex) => {
+            const totalItems = groupColumn.tamil.length
             const invertedRow = rowCount - totalItems + rowIndex
             const top = timescaleHeight + invertedRow * rowHeight + 10
             rectangles.push({
@@ -334,7 +334,7 @@ export default defineComponent({
                 const index = keys.indexOf(item.category)
                 return colorPalette[index % colorPalette.length]
               })(),
-              title: item.english_heading,
+              title: item.tamil_heading,
               category: item.category,
             })
           })

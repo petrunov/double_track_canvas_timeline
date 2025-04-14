@@ -237,7 +237,7 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
   const startingId = items[items.length - 1].id + 1
 
   function getRandomYear(): number {
-    return Math.floor(Math.random() * (2025 - -3000 + 1)) - 3000
+    return Math.floor(Math.random() * (2025 - -3113 + 1)) - 3113
   }
 
   function getRandomCategory(): string {
