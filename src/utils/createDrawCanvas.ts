@@ -502,27 +502,28 @@ export function createDrawCanvas(
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
           drawTrack(
             ctx,
-            groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
+            groupColumn.world.map((item) => ({ ...item, id: String(item.id) })),
             x,
             0,
             globalScale,
             layout,
             effectiveItemWidth,
-            (item) => item.tamil_heading || '',
+            (item) => item.english_heading || '',
           )
           drawTrack(
             ctx,
-            groupColumn.world.map((item) => ({ ...item, id: String(item.id) })),
+            groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
+
             x,
             layout.rowHeight,
             globalScale,
             layout,
             effectiveItemWidth,
-            (item) => item.english_heading || '',
+            (item) => item.tamil_heading || '',
           )
         } else {
-          groupColumn.tamil.forEach((item) => fadeProgress.delete(String(item.id)))
           groupColumn.world.forEach((item) => fadeProgress.delete(String(item.id)))
+          groupColumn.tamil.forEach((item) => fadeProgress.delete(String(item.id)))
         }
         flatColumnIndex++
       })
