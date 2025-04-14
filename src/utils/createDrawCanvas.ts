@@ -123,7 +123,6 @@ function wrapTextFloatLeft(
   // Draw the leftover line
   if (line && linesUsed < maxLines) {
     let lineLeft = x
-    let usableWidth = maxWidth // Declare usableWidth here
     const lineBottom = currentY + lineHeight
     const overlapVertically = lineBottom > imgY && currentY < imgY + imgH
     if (overlapVertically) {
@@ -131,7 +130,6 @@ function wrapTextFloatLeft(
       const shiftAmount = shiftLeft - x
       if (shiftAmount < maxWidth) {
         lineLeft = shiftLeft
-        usableWidth = maxWidth - shiftAmount
       }
     }
     // Only modify the final line if not all words were drawn and we are on the last allowed line.
@@ -258,7 +256,7 @@ function drawRectWithText(
   const textAreaX = x + MARGIN
   const textAreaY = imageY
   const textAreaWidth = width - 2 * MARGIN
-  const MAX_LINES = 6
+  const MAX_LINES = 4
 
   ctx.fillStyle = '#000'
   // Step 1: Draw Title in bold.
