@@ -36,7 +36,6 @@ function hexToRgba(hex: string, alpha: number): string {
   let r = 0,
     g = 0,
     b = 0
-  // Handle shorthand hex form (#f43)
   if (hex.length === 4) {
     r = parseInt(hex[1] + hex[1], 16)
     g = parseInt(hex[2] + hex[2], 16)
@@ -57,23 +56,247 @@ type ClickEffect = {
 }
 
 /**
- * createDrawCanvas is responsible for drawing the timeline on the canvas.
- * In addition to drawing, it builds an array of hitAreas with bounding boxes
- * for each drawn item so that click events can determine which item was clicked.
- *
- * It supports two effects:
- *  1) A ripple effect
- *  2) A pop effect
- *
- * Also supports two new parameters to control item height:
- *    - worldTrackHeightFactor
- *    - tamilTrackHeightFactor
- *
- * We now ensure:
- *   - The Tamil track sits ~10-14 px above the bottom (your minimap space).
- *   - The Tamil track takes ~66% of the "remaining" vertical space.
- *   - The World track sits above it, taking the remaining ~34%.
+ * A helper to clip text on a single line with "..." if it’s too long.
  */
+function clipSingleLine(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text
+  let clipped = text
+  while (clipped.length > 0 && ctx.measureText(clipped + '...').width > maxWidth) {
+    clipped = clipped.slice(0, -1)
+  }
+  return clipped + '...'
+}
+
+/**
+ * A specialized "float left" wrapping function so text wraps around an image.
+ * It draws text line by line; if a line overlaps the image vertically,
+ * the text left boundary shifts to the right of the image.
+ * If not all text fits in maxLines, the final allowed line gets "..." appended.
+ */
+function wrapTextFloatLeft(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines: number,
+  imgX: number,
+  imgY: number,
+  imgW: number,
+  imgH: number,
+) {
+  const words = text.split(/\s+/)
+  let line = ''
+  let currentY = y
+  let linesUsed = 0
+  let i = 0
+
+  for (i = 0; i < words.length; i++) {
+    const testLine = line ? line + ' ' + words[i] : words[i]
+
+    let lineLeft = x
+    let usableWidth = maxWidth
+
+    const lineBottom = currentY + lineHeight
+    const overlapVertically = lineBottom > imgY && currentY < imgY + imgH
+    if (overlapVertically) {
+      const shiftLeft = imgX + imgW + 5 // 5px gap
+      const shiftAmount = shiftLeft - x
+      if (shiftAmount < maxWidth) {
+        lineLeft = shiftLeft
+        usableWidth = maxWidth - shiftAmount
+      }
+    }
+
+    if (ctx.measureText(testLine).width <= usableWidth) {
+      line = testLine
+    } else {
+      ctx.fillText(line, lineLeft, currentY)
+      line = words[i]
+      currentY += lineHeight
+      linesUsed++
+      if (linesUsed >= maxLines) return
+    }
+  }
+
+  // Draw the leftover line
+  if (line && linesUsed < maxLines) {
+    let lineLeft = x
+    let usableWidth = maxWidth // Declare usableWidth here
+    const lineBottom = currentY + lineHeight
+    const overlapVertically = lineBottom > imgY && currentY < imgY + imgH
+    if (overlapVertically) {
+      const shiftLeft = imgX + imgW + 5
+      const shiftAmount = shiftLeft - x
+      if (shiftAmount < maxWidth) {
+        lineLeft = shiftLeft
+        usableWidth = maxWidth - shiftAmount
+      }
+    }
+    // Only modify the final line if not all words were drawn and we are on the last allowed line.
+    if (i < words.length && linesUsed === maxLines - 1) {
+      if (line.length >= 3) {
+        line = line.slice(0, -3) + '...'
+      } else {
+        line = '...'
+      }
+    }
+    ctx.fillText(line, lineLeft, currentY)
+  }
+}
+
+/**
+ * Helper: Formats world years.
+ * Negative numbers become "YYYY B.C." and non-negative become "A.D. YYYY".
+ */
+function formatWorldYear(year: number): string {
+  return year < 0 ? Math.abs(year) + ' B.C.' : 'A.D. ' + year
+}
+
+/**
+ * drawRectWithText()
+ * Draws the overall rectangle for an item.
+ *
+ * For world items (itemHeightFactor < 1):
+ *  - Draw a forced-square image filling 100% of the available height (minus margins)
+ *  - Place the title to the RIGHT of the image, vertically centered.
+ *
+ * For Tamil items (itemHeightFactor >= 1):
+ *  - Use a "float left" approach so that text (title + multi-line description)
+ *    wraps around the image.
+ */
+function drawRectWithText(
+  ctx: CanvasRenderingContext2D,
+  title: string,
+  description: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  globalScale: number,
+  image: HTMLImageElement,
+  itemHeightFactor: number,
+  categoryColor: string,
+) {
+  // Draw white background rectangle with shadow
+  ctx.save()
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowBlur = 6
+  ctx.shadowOffsetX = 1
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(x, y, width, height)
+  ctx.restore()
+
+  // Draw category-colored bar at the top.
+  const topIndicatorHeight = 5 * globalScale
+  ctx.fillStyle = categoryColor
+  ctx.fillRect(x, y, width, topIndicatorHeight)
+
+  if (itemHeightFactor < 1) {
+    // WORLD (smaller) items.
+    const MARGIN = 6 * globalScale
+    const TITLE_FONT_SIZE = 14 * globalScale
+
+    const availableHeight = height - topIndicatorHeight - 2 * MARGIN
+    const availableWidth = width - 2 * MARGIN
+    let side = availableHeight
+    if (side > availableWidth) {
+      side = availableWidth
+    }
+
+    const imageX = x + MARGIN
+    const imageY = y + topIndicatorHeight + MARGIN
+
+    if (image?.complete) {
+      const cropSize = Math.min(image.naturalWidth, image.naturalHeight)
+      const sx = (image.naturalWidth - cropSize) / 2
+      const sy = 0
+      ctx.drawImage(image, sx, sy, cropSize, cropSize, imageX, imageY, side, side)
+    }
+
+    // Title to the right, vertically centered relative to the square image.
+    const textX = imageX + side + MARGIN
+    const textMaxWidth = width - (textX - x) - MARGIN
+    const textY = imageY + side / 2 - TITLE_FONT_SIZE / 2
+
+    ctx.fillStyle = '#000'
+    ctx.textBaseline = 'top'
+    ctx.font = `bold ${TITLE_FONT_SIZE}px sans-serif`
+    const clippedTitle = clipSingleLine(ctx, title, textMaxWidth)
+    ctx.fillText(clippedTitle, textX, textY)
+    return
+  }
+
+  // TAMIL (bigger) items => float left approach.
+  const ITEM_TOP_PADDING = 5 * globalScale
+  const MARGIN = 6 * globalScale
+  const TITLE_FONT_SIZE = 14 * globalScale
+  const DESC_FONT_SIZE = 12 * globalScale
+  const LINE_SPACING = 18 * globalScale
+
+  const contentY = y + ITEM_TOP_PADDING
+  const baseRatio = 60 / 120
+  const IMAGE_SIZE = Math.max(40, height * baseRatio)
+
+  const imageX = x + MARGIN
+  const imageY = contentY + MARGIN
+
+  let actualImgWidth = 0,
+    actualImgHeight = 0
+  if (image?.complete) {
+    const cropSize = Math.min(image.naturalWidth, image.naturalHeight)
+    const sx = (image.naturalWidth - cropSize) / 2
+    const sy = 0
+    ctx.drawImage(image, sx, sy, cropSize, cropSize, imageX, imageY, IMAGE_SIZE, IMAGE_SIZE)
+    actualImgWidth = IMAGE_SIZE
+    actualImgHeight = IMAGE_SIZE
+  }
+
+  // Set up text area parameters.
+  const textAreaX = x + MARGIN
+  const textAreaY = imageY
+  const textAreaWidth = width - 2 * MARGIN
+  const MAX_LINES = 6
+
+  ctx.fillStyle = '#000'
+  // Step 1: Draw Title in bold.
+  {
+    ctx.textBaseline = 'top'
+    ctx.font = `bold ${TITLE_FONT_SIZE}px sans-serif`
+    let titleLineLeft = textAreaX
+    const lineHeightForTitle = TITLE_FONT_SIZE + 4 * globalScale
+    const lineBottom = textAreaY + lineHeightForTitle
+    const overlapVert = lineBottom > imageY && textAreaY < imageY + actualImgHeight
+    if (overlapVert) {
+      titleLineLeft = imageX + actualImgWidth + 5
+    }
+    const availableForTitle = x + width - titleLineLeft - MARGIN
+    const clippedT = clipSingleLine(ctx, title, availableForTitle)
+    ctx.fillText(clippedT, titleLineLeft, textAreaY)
+  }
+
+  // Step 2: Draw Description with float-left wrapping.
+  const descStartY = textAreaY + TITLE_FONT_SIZE + 4 * globalScale
+  ctx.font = `${DESC_FONT_SIZE}px sans-serif`
+  wrapTextFloatLeft(
+    ctx,
+    description || '',
+    textAreaX,
+    descStartY,
+    textAreaWidth,
+    LINE_SPACING,
+    MAX_LINES,
+    imageX,
+    imageY,
+    actualImgWidth,
+    actualImgHeight,
+  )
+}
+
+// -------------------------------------------------------------------------------------------------
+
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
   canvasWidth: Ref<number>,
@@ -116,7 +339,6 @@ export function createDrawCanvas(
   const REFERENCE_MAX_SCREEN_WIDTH = 1920
   const MIN_INDICATOR_WIDTH = 10
 
-  // We'll reserve this many pixels at the bottom for the minimap gap:
   const MINIMAP_MARGIN = 14
 
   const hitAreas: Array<{
@@ -134,8 +356,8 @@ export function createDrawCanvas(
   const highlightItem = (itemId: string, clickX: number, clickY: number) => {
     clickEffects.set(itemId, { startTime: performance.now(), clickX, clickY })
   }
+
   function getScaleFactor() {
-    // If your horizontal dimension is what should determine item scale:
     const clampedWidth = Math.max(
       MIN_SCREEN_WIDTH,
       Math.min(canvasWidth.value, REFERENCE_MAX_SCREEN_WIDTH),
@@ -149,57 +371,36 @@ export function createDrawCanvas(
     return MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
   }
 
-  /**
-   * We define a "timeline region" from y=0 to y=(canvasHeight - MINIMAP_MARGIN).
-   * Then:
-   *   - The bottom (Tamil) track is 66% of that region
-   *   - The top (World) track is the remaining 34%
-   *
-   * Each track has a "year lane" near its bottom, with some margin above it
-   * so items can anchor themselves.
-   */
   function getLayoutParams(globalScale: number) {
-    // We introduce a SHIFT constant:
     const SHIFT = 15
-
-    // The total vertical space for the timeline, leaving a 14px gap at bottom for minimap.
     const timelineHeight = canvasHeight.value - MINIMAP_MARGIN
 
-    // Tamil track = 66%, World track = 34%.
     const tamilTrackHeight = timelineHeight * 0.66
-    const worldTrackHeight = timelineHeight - tamilTrackHeight // ~34%
+    const worldTrackHeight = timelineHeight - tamilTrackHeight
 
-    // BOTTOM (Tamil) track:
-    const tamilTrackTop = worldTrackHeight
     const bottomMargin = 10
     const trackMargin = tamilTrackHeight * 0.05
     const trackContentHeight = tamilTrackHeight - trackMargin - bottomMargin
     const yearLaneHeight = 20 * globalScale
 
-    // Place the Tamil year lane near the bottom of this region:
+    const tamilTrackTop = worldTrackHeight
     const tamilLaneY = tamilTrackTop + trackMargin + trackContentHeight - yearLaneHeight
     const EXTRA_SPACE_BELOW_LANE = 20 * globalScale
     const tamilTrackAnchorY = tamilLaneY - EXTRA_SPACE_BELOW_LANE
 
-    // TOP (World) track:
     const topMargin = worldTrackHeight * 0.05
     const topContentHeight = worldTrackHeight - topMargin - bottomMargin
     const worldLaneY = topMargin + topContentHeight - yearLaneHeight
     const worldTrackAnchorY = worldLaneY - EXTRA_SPACE_BELOW_LANE
 
-    // Finally, add SHIFT to every y-based value to move everything down 15px.
     return {
       timelineHeight,
       yearLaneHeight,
       EXTRA_SPACE_BELOW_LANE,
-
-      // Tamil track (shifted 15px):
       tamilTrackTop: tamilTrackTop + SHIFT,
       tamilLaneY: tamilLaneY + SHIFT,
       tamilTrackAnchorY: tamilTrackAnchorY + SHIFT,
       tamilTrackHeight,
-
-      // World track (shifted 15px):
       worldTrackHeight,
       worldLaneY: worldLaneY + SHIFT,
       worldTrackAnchorY: worldTrackAnchorY + SHIFT,
@@ -235,71 +436,45 @@ export function createDrawCanvas(
     ctx.translate(offsetX * globalScale, offsetY * globalScale)
   }
 
-  const clipText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string => {
-    let txt = text || ''
-    if (ctx.measureText(txt).width <= maxWidth) return txt
-    while (ctx.measureText(txt + '...').width > maxWidth && txt.length > 0) {
-      txt = txt.slice(0, -1)
-    }
-    return txt + '...'
+  function getCategoryColor(category: string): string {
+    const keys = Object.keys(categoryFilter.value).sort()
+    const index = keys.indexOf(category)
+    const colorPalette = [
+      '#f44336',
+      '#e91e63',
+      '#9c27b0',
+      '#2196f3',
+      '#4caf50',
+      '#ff9800',
+      '#795548',
+    ]
+    return colorPalette[index % colorPalette.length] || '#000'
   }
 
-  // Draws one rectangular item with shadow, image, and text.
-  const drawRectWithText = (
-    ctx: CanvasRenderingContext2D,
-    text: string,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    globalScale: number,
-    isMulti: boolean,
-    image: HTMLImageElement,
-  ) => {
-    const REFERENCE_TEXT_MARGIN = 5
-    const REFERENCE_BASE_FONT_SIZE = 14
-    const baseRatio = 60 / REFERENCE_SINGLE_ITEM_HEIGHT
-    const IMAGE_SIZE = height * baseRatio
-
-    const margin = REFERENCE_TEXT_MARGIN * globalScale
-    const imageX = x + margin
-    const imageY = y + (height - IMAGE_SIZE) / 2
-    const TEXT_START_X = imageX + IMAGE_SIZE + margin
-
-    ctx.save()
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-    ctx.shadowBlur = 6
-    ctx.shadowOffsetX = 1
-    ctx.shadowOffsetY = 1
-    ctx.fillStyle = 'rgba(255,255,255,1)'
-    ctx.fillRect(x, y, width, height)
-    ctx.restore()
-
-    if (image?.complete) {
-      const cropSize = Math.min(image.naturalWidth, image.naturalHeight)
-      const sx = (image.naturalWidth - cropSize) / 2
-      const sy = 0
-      ctx.drawImage(image, sx, sy, cropSize, cropSize, imageX, imageY, IMAGE_SIZE, IMAGE_SIZE)
-    }
-
-    ctx.fillStyle = '#000'
-    ctx.font = `bold ${REFERENCE_BASE_FONT_SIZE * globalScale}px sans-serif`
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-
-    const clippedTitle = clipText(ctx, text, width - (TEXT_START_X - x) - margin)
-    ctx.fillText(clippedTitle, TEXT_START_X, y + height / 2)
+  // Format world years with "A.D. YYYY" or "YYYY B.C."
+  function formatWorldYear(year: number): string {
+    return year < 0 ? Math.abs(year) + ' B.C.' : 'A.D. ' + year
   }
 
-  // Draw a column of items, anchored at anchorY (items bottom).
+  /**
+   * Draw a column of items, anchored at anchorY (items bottom).
+   */
   const drawTrack = (
     ctx: CanvasRenderingContext2D,
-    items: { id: string; tamil_heading?: string; english_heading?: string; category?: string }[],
+    items: {
+      id: string
+      tamil_heading?: string
+      english_heading?: string
+      category?: string
+      description?: string
+      DetailedText_English?: string
+      DetailedText_Tamil?: string
+    }[],
     offsetX: number,
     anchorY: number,
     globalScale: number,
     effectiveItemWidth: number,
-    getTitle: (item: { id: string; tamil_heading?: string; english_heading?: string }) => string,
+    getTitle: (item: any) => string,
     itemHeightFactor: number,
   ) => {
     if (!items.length) return
@@ -313,10 +488,12 @@ export function createDrawCanvas(
 
     const drawOneItem = (item: any, topY: number, rectHeight: number) => {
       const visible = categoryFilter.value[item.category || ''] !== false
-      const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
+      if (!visible) return
 
+      const description = item.english_long_text || item.description || ''
+      const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
       ctx.save()
-      ctx.globalAlpha = visible ? alpha : 0
+      ctx.globalAlpha = alpha
       applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
 
       if (clickEffects.has(item.id)) {
@@ -332,47 +509,33 @@ export function createDrawCanvas(
       }
 
       const image = itemImages[Math.abs(hashCode(item.id)) % itemImages.length]
+      const title = getTitle(item)
+      const categoryClr = getCategoryColor(item.category || '')
+
       drawRectWithText(
         ctx,
-        getTitle(item),
+        title,
+        description,
         0,
         topY,
         effectiveItemWidth - 10,
         rectHeight,
         globalScale,
-        items.length > 1,
         image,
+        itemHeightFactor,
+        categoryClr,
       )
 
-      const topIndicatorHeight = 5 * globalScale
-      const getCategoryColor = (category: string): string => {
-        const keys = Object.keys(categoryFilter.value).sort()
-        const index = keys.indexOf(category)
-        const colorPalette = [
-          '#f44336',
-          '#e91e63',
-          '#9c27b0',
-          '#2196f3',
-          '#4caf50',
-          '#ff9800',
-          '#795548',
-        ]
-        return colorPalette[index % colorPalette.length] || '#000'
-      }
-      ctx.fillStyle = getCategoryColor(item.category || '')
-      ctx.fillRect(0, topY, effectiveItemWidth - 10, topIndicatorHeight)
       ctx.restore()
 
-      if (visible) {
-        hitAreas.push({
-          id: item.id,
-          x: offsetX,
-          y: topY,
-          width: effectiveItemWidth - 10,
-          height: rectHeight,
-          data: item,
-        })
-      }
+      hitAreas.push({
+        id: item.id,
+        x: offsetX,
+        y: topY,
+        width: effectiveItemWidth - 10,
+        height: rectHeight,
+        data: item,
+      })
 
       if (clickEffects.has(item.id)) {
         const effect = clickEffects.get(item.id)!
@@ -392,10 +555,10 @@ export function createDrawCanvas(
           const maxRadius = Math.sqrt(dx * dx + dy * dy)
           const radius = progress * maxRadius
           const rippleAlpha = 0.3 * (1 - progress)
-          const baseColor = getCategoryColor(item.category || '')
+
           ctx.beginPath()
           ctx.arc(localX, topY + localY, radius, 0, Math.PI * 2)
-          ctx.fillStyle = hexToRgba(baseColor, rippleAlpha)
+          ctx.fillStyle = hexToRgba(categoryClr, rippleAlpha)
           ctx.fill()
           ctx.restore()
         } else {
@@ -410,16 +573,15 @@ export function createDrawCanvas(
     } else {
       const totalHeight = items.length * multiItemBase + gap * (items.length - 1)
       const startY = anchorY - totalHeight
-      items.forEach((item, i) => {
+      items.forEach((itm, i) => {
         const topY = startY + i * (multiItemBase + gap)
-        drawOneItem(item, topY, multiItemBase)
+        drawOneItem(itm, topY, multiItemBase)
       })
     }
 
     ctx.restore()
   }
 
-  // Draw background for each track's lane, plus year labels.
   const drawYearElements = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
@@ -429,19 +591,12 @@ export function createDrawCanvas(
   ) => {
     ctx.save()
     ctx.fillStyle = 'white'
-    // The bottom track's lane is near layout.tamilLaneY,
-    // The top track's lane is near layout.worldLaneY.
-
-    // We'll fill a horizontal strip for each lane.
-    // For clarity, you can do a single fillRect for each:
-    // top lane:
     ctx.fillRect(0, layout.worldLaneY, canvasWidth.value, layout.yearLaneHeight)
-    // bottom lane:
     ctx.fillRect(0, layout.tamilLaneY, canvasWidth.value, layout.yearLaneHeight)
     ctx.restore()
 
     let flatIndex = 0
-    groupedItems.value.forEach(({ year, groups }) => {
+    groupedItems.value.forEach(({ year, year_ta, groups }) => {
       groups.forEach(() => {
         const x = flatIndex * effectiveItemWidth - currentScrollX
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
@@ -454,15 +609,15 @@ export function createDrawCanvas(
           ctx.shadowOffsetX = 1
           ctx.shadowOffsetY = 1
           ctx.fillStyle = '#000'
-          // Top track label:
+          // For World items, use formatted year.
           ctx.fillText(
-            String(year),
+            formatWorldYear(year),
             x + (effectiveItemWidth - 10) / 2,
             layout.worldLaneY + layout.yearLaneHeight / 2,
           )
-          // Bottom track label:
+          // For Tamil items, use the Tamil year (year_ta).
           ctx.fillText(
-            `${year} C.E.`,
+            String(year_ta),
             x + (effectiveItemWidth - 10) / 2,
             layout.tamilLaneY + layout.yearLaneHeight / 2,
           )
@@ -493,7 +648,6 @@ export function createDrawCanvas(
 
     ctx.save()
     ctx.fillStyle = 'white'
-    // optional arrows near lane centers:
     drawArrow(layout.worldLaneY + layout.yearLaneHeight / 2 - 14 * globalScale)
     drawArrow(layout.tamilLaneY + layout.yearLaneHeight / 2 - 14 * globalScale)
     ctx.restore()
@@ -508,7 +662,6 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Clear old hit areas each frame
     hitAreas.length = 0
 
     const globalScale = getScaleFactor()
@@ -531,9 +684,7 @@ export function createDrawCanvas(
       yearGroup.groups.forEach((groupColumn) => {
         const x = flatColumnIndex * effectiveItemWidth - currentScrollX
 
-        // Only draw columns if in viewport
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
-          // World (top) track => anchor at layout.worldTrackAnchorY
           drawTrack(
             ctx,
             groupColumn.world.map((item) => ({ ...item, id: String(item.id) })),
@@ -544,7 +695,6 @@ export function createDrawCanvas(
             (item) => item.english_heading || '',
             worldTrackHeightFactor,
           )
-          // Tamil (bottom) track => anchor at layout.tamilTrackAnchorY
           drawTrack(
             ctx,
             groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
@@ -556,9 +706,8 @@ export function createDrawCanvas(
             tamilTrackHeightFactor,
           )
         } else {
-          // remove fade progress for items not drawn
-          groupColumn.world.forEach((item) => fadeProgress.delete(String(item.id)))
-          groupColumn.tamil.forEach((item) => fadeProgress.delete(String(item.id)))
+          groupColumn.world.forEach((itm) => fadeProgress.delete(String(itm.id)))
+          groupColumn.tamil.forEach((itm) => fadeProgress.delete(String(itm.id)))
         }
         flatColumnIndex++
       })

@@ -30,6 +30,7 @@ export interface GroupColumn {
 
 export interface YearGroup {
   year: number
+  year_ta: string
   groups: GroupColumn[]
 }
 
@@ -106,13 +107,16 @@ function getItemTrack(item: Item): 'tamil' | 'world' {
  * @returns An array of YearGroup objects.
  */
 export function restructureItemsGroupedByYearAndTrack(items: Item[]): YearGroup[] {
-  const yearMap: Record<string, { tamil: Item[]; world: Item[] }> = {}
+  const yearMap: Record<string, { tamil: Item[]; world: Item[]; year_ta: string }> = {}
 
   items.forEach((item) => {
     const yearKey = String(item.year_ce)
+    const yearTa = String(item.year_ta)
     if (!yearMap[yearKey]) {
-      yearMap[yearKey] = { tamil: [], world: [] }
+      yearMap[yearKey] = { tamil: [], world: [], year_ta: '' }
     }
+    yearMap[yearKey].year_ta = yearTa
+
     if (getItemTrack(item) === 'world') {
       yearMap[yearKey].world.push(item)
     } else {
@@ -133,6 +137,7 @@ export function restructureItemsGroupedByYearAndTrack(items: Item[]): YearGroup[
     .sort((a, b) => Number(a) - Number(b))
     .forEach((yearKey) => {
       const year = Number(yearKey)
+      const year_ta = yearMap[yearKey].year_ta
       const tamilItems = yearMap[yearKey].tamil
       const worldItems = yearMap[yearKey].world
 
@@ -148,7 +153,7 @@ export function restructureItemsGroupedByYearAndTrack(items: Item[]): YearGroup[
           world: worldGroups[i] || [],
         })
       }
-      yearGroups.push({ year, groups })
+      yearGroups.push({ year, groups, year_ta })
     })
 
   return yearGroups
