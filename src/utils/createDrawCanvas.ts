@@ -60,10 +60,19 @@ type ClickEffect = {
  * createDrawCanvas is responsible for drawing the timeline on the canvas.
  * In addition to drawing, it builds an array of hitAreas with bounding boxes
  * for each drawn item so that click events can determine which item was clicked.
- * It now supports two effects:
- *  1. A ripple effect: when an item is clicked, calling highlightItem(itemId, clickX, clickY)
- *     shows a ripple that starts at the click spot and fades out over a set duration.
- *  2. A “pop” effect: the item scales up briefly (pops) on hit and then returns to normal.
+ *
+ * It supports two effects:
+ *  1) A ripple effect
+ *  2) A pop effect
+ *
+ * Also supports two new parameters to control item height:
+ *    - worldTrackHeightFactor
+ *    - tamilTrackHeightFactor
+ *
+ * We now ensure:
+ *   - The Tamil track sits ~10-14 px above the bottom (your minimap space).
+ *   - The Tamil track takes ~66% of the "remaining" vertical space.
+ *   - The World track sits above it, taking the remaining ~34%.
  */
 export function createDrawCanvas(
   scrollCanvas: Ref<HTMLCanvasElement | null>,
@@ -82,6 +91,9 @@ export function createDrawCanvas(
     lineHeight: number,
   ) => number,
   minimapWidth: number,
+  // New factors for controlling item height.
+  worldTrackHeightFactor = 0.5,
+  tamilTrackHeightFactor = 1.0,
 ): {
   drawCanvas: () => void
   cancelAnimation: () => void
@@ -99,12 +111,14 @@ export function createDrawCanvas(
 } {
   const EFFECTIVE_WIDTH_OFFSET = 2
   const REFERENCE_SINGLE_ITEM_HEIGHT = 90
+  const REFERENCE_MULTI_ITEM_HEIGHT = 90
   const MIN_SCREEN_WIDTH = 320
   const REFERENCE_MAX_SCREEN_WIDTH = 1920
   const MIN_INDICATOR_WIDTH = 10
 
-  // This array will hold the bounding boxes of drawn items.
-  // Only items drawn (and visible) are added.
+  // We'll reserve this many pixels at the bottom for the minimap gap:
+  const MINIMAP_MARGIN = 14
+
   const hitAreas: Array<{
     id: string
     x: number
@@ -114,67 +128,102 @@ export function createDrawCanvas(
     data: any
   }> = []
 
-  // This map stores the click effect for an item.
-  // A ripple effect (and pop effect) will be rendered for HIGHLIGHT_DURATION ms after calling highlightItem.
   const clickEffects = new Map<string, ClickEffect>()
-  const HIGHLIGHT_DURATION = 300 // duration in ms
+  const HIGHLIGHT_DURATION = 300
 
-  // Call this function to trigger a ripple and pop effect on an item.
-  // The caller must supply the click coordinates (relative to the item).
   const highlightItem = (itemId: string, clickX: number, clickY: number) => {
     clickEffects.set(itemId, { startTime: performance.now(), clickX, clickY })
   }
+  function getScaleFactor() {
+    // Use the smaller of the two dimensions:
+    const minDim = Math.min(canvasWidth.value, canvasHeight.value)
 
-  const getScaleFactor = () => {
-    const clampedWidth = Math.max(
-      MIN_SCREEN_WIDTH,
-      Math.min(canvasWidth.value, REFERENCE_MAX_SCREEN_WIDTH),
-    )
+    // Now clamp that between MIN_SCREEN_WIDTH and REFERENCE_MAX_SCREEN_WIDTH
+    const clampedMinDim = Math.max(MIN_SCREEN_WIDTH, Math.min(minDim, REFERENCE_MAX_SCREEN_WIDTH))
+
+    // The rest stays exactly as before:
     const ratio =
-      (clampedWidth - MIN_SCREEN_WIDTH) / (REFERENCE_MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
-    const MIN_SCALE = 0.8,
-      MAX_SCALE = 1.2
+      (clampedMinDim - MIN_SCREEN_WIDTH) / (REFERENCE_MAX_SCREEN_WIDTH - MIN_SCREEN_WIDTH)
+
+    const MIN_SCALE = 0.8
+    const MAX_SCALE = 1.2
+
     return MIN_SCALE + (MAX_SCALE - MIN_SCALE) * ratio
   }
 
+  /**
+   * We define a "timeline region" from y=0 to y=(canvasHeight - MINIMAP_MARGIN).
+   * Then:
+   *   - The bottom (Tamil) track is 66% of that region
+   *   - The top (World) track is the remaining 34%
+   *
+   * Each track has a "year lane" near its bottom, with some margin above it
+   * so items can anchor themselves.
+   */
   function getLayoutParams(globalScale: number) {
-    const rowHeight = canvasHeight.value / 2
-    const trackTopMargin = canvasHeight.value * 0.05
-    const bottomMargin = 10
-    const trackContentHeight = rowHeight - trackTopMargin - bottomMargin
+    // The total vertical space for the timeline, leaving a 14px gap at bottom for minimap.
+    const timelineHeight = canvasHeight.value - MINIMAP_MARGIN
 
-    const singleItemHeight = REFERENCE_SINGLE_ITEM_HEIGHT * globalScale
+    // Tamil track = 66%, World track = 34%.
+    const tamilTrackHeight = timelineHeight * 0.66
+    const worldTrackHeight = timelineHeight - tamilTrackHeight // ~34%
+
+    // BOTTOM (Tamil) track:
+    // We treat it as spanning from (timelineHeight - tamilTrackHeight) up to timelineHeight.
+    // So the bottom lane is near timelineHeight (the very bottom), minus some margin.
+    const tamilTrackTop = worldTrackHeight
+    // We'll define some margin for the top/bottom:
+    const bottomMargin = 10
+    const trackMargin = tamilTrackHeight * 0.05
+    const trackContentHeight = tamilTrackHeight - trackMargin - bottomMargin
     const yearLaneHeight = 20 * globalScale
-    const laneY = trackTopMargin + trackContentHeight - yearLaneHeight
-    const itemY = laneY - 20 * globalScale - singleItemHeight
+
+    // Place the Tamil year lane near the bottom of this region:
+    const tamilLaneY = tamilTrackTop + trackMargin + trackContentHeight - yearLaneHeight
+    const EXTRA_SPACE_BELOW_LANE = 20 * globalScale
+    const tamilTrackAnchorY = tamilLaneY - EXTRA_SPACE_BELOW_LANE
+
+    // TOP (World) track:
+    // It occupies from y=0 down to worldTrackHeight.
+    // We'll define a margin, place a lane near the bottom, etc.
+    const topMargin = worldTrackHeight * 0.05
+    const topContentHeight = worldTrackHeight - topMargin - bottomMargin
+    const worldLaneY = topMargin + topContentHeight - yearLaneHeight
+    const worldTrackAnchorY = worldLaneY - EXTRA_SPACE_BELOW_LANE
 
     return {
-      rowHeight,
-      trackTopMargin,
-      bottomMargin,
-      trackContentHeight,
-      singleItemHeight,
+      timelineHeight,
       yearLaneHeight,
-      laneY,
-      itemY,
+      EXTRA_SPACE_BELOW_LANE,
+
+      // Tamil track:
+      tamilTrackTop,
+      tamilLaneY,
+      tamilTrackAnchorY,
+      tamilTrackHeight,
+
+      // World track:
+      worldTrackHeight,
+      worldLaneY,
+      worldTrackAnchorY,
     }
   }
 
   const fadeProgress = new Map<string, number>()
-  const FADING_SPEED = 0.04 // adjust as needed
+  const FADING_SPEED = 0.04
 
   const updateFadeProgress = (itemId: string) => {
     const progress = Math.min(1, (fadeProgress.get(itemId) ?? 0) + FADING_SPEED)
     fadeProgress.set(itemId, progress)
 
     const alpha = progress
-    // This fadeScale determines the transformation of the item’s background.
     const fadeScale = 0.5 + progress * 0.5
     const offsetX = (1 - progress) * 20
     const offsetY = (1 - progress) * -30
 
     return { alpha, fadeScale, offsetX, offsetY }
   }
+
   const applyFadeTransform = (
     ctx: CanvasRenderingContext2D,
     fadeScale: number,
@@ -198,8 +247,7 @@ export function createDrawCanvas(
     return txt + '...'
   }
 
-  // Draws the background white box (representing an item) with a neat drop shadow,
-  // then draws its image and text. No text shadow is applied.
+  // Draws one rectangular item with shadow, image, and text.
   const drawRectWithText = (
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -213,16 +261,14 @@ export function createDrawCanvas(
   ) => {
     const REFERENCE_TEXT_MARGIN = 5
     const REFERENCE_BASE_FONT_SIZE = 14
-    const REFERENCE_LINE_HEIGHT_MULTIPLIER = 20
-    const REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET = 30
+    const baseRatio = 60 / REFERENCE_SINGLE_ITEM_HEIGHT
+    const IMAGE_SIZE = height * baseRatio
 
-    const IMAGE_SIZE = 60 * globalScale
     const margin = REFERENCE_TEXT_MARGIN * globalScale
     const imageX = x + margin
     const imageY = y + (height - IMAGE_SIZE) / 2
     const TEXT_START_X = imageX + IMAGE_SIZE + margin
 
-    // Draw the background white box with drop shadow.
     ctx.save()
     ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
     ctx.shadowBlur = 6
@@ -232,7 +278,6 @@ export function createDrawCanvas(
     ctx.fillRect(x, y, width, height)
     ctx.restore()
 
-    // Draw the image if it's loaded.
     if (image?.complete) {
       const cropSize = Math.min(image.naturalWidth, image.naturalHeight)
       const sx = (image.naturalWidth - cropSize) / 2
@@ -240,60 +285,50 @@ export function createDrawCanvas(
       ctx.drawImage(image, sx, sy, cropSize, cropSize, imageX, imageY, IMAGE_SIZE, IMAGE_SIZE)
     }
 
-    // Draw the text normally without a text shadow.
     ctx.fillStyle = '#000'
     ctx.font = `bold ${REFERENCE_BASE_FONT_SIZE * globalScale}px sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    if (isMulti) {
-      const clippedTitle = clipText(ctx, text, width - (TEXT_START_X - x) - margin)
-      ctx.fillText(clippedTitle, TEXT_START_X, y + height / 2)
-    } else {
-      wrapText(
-        ctx,
-        text,
-        TEXT_START_X,
-        y + REFERENCE_SINGLE_ITEM_TEXT_Y_OFFSET * globalScale,
-        width - (TEXT_START_X - x) - margin,
-        REFERENCE_LINE_HEIGHT_MULTIPLIER * globalScale,
-      )
-    }
+
+    const clippedTitle = clipText(ctx, text, width - (TEXT_START_X - x) - margin)
+    ctx.fillText(clippedTitle, TEXT_START_X, y + height / 2)
   }
 
-  // drawTrack draws a track of items and records each drawn item’s bounding box in hitAreas.
+  // Draw a column of items, anchored at anchorY (items bottom).
   const drawTrack = (
     ctx: CanvasRenderingContext2D,
     items: { id: string; tamil_heading?: string; english_heading?: string; category?: string }[],
     offsetX: number,
-    offsetY: number,
+    anchorY: number,
     globalScale: number,
-    layout: ReturnType<typeof getLayoutParams>,
     effectiveItemWidth: number,
     getTitle: (item: { id: string; tamil_heading?: string; english_heading?: string }) => string,
+    itemHeightFactor: number,
   ) => {
     if (!items.length) return
 
-    ctx.save()
-    ctx.translate(offsetX, offsetY)
+    const gap = 4 * globalScale
+    const singleItemHeight = REFERENCE_SINGLE_ITEM_HEIGHT * globalScale * itemHeightFactor
+    const multiItemBase = REFERENCE_MULTI_ITEM_HEIGHT * globalScale * itemHeightFactor
 
-    // Draw each item and record its hit area.
-    const drawOneItem = (item: any, y: number, rectHeight: number) => {
+    ctx.save()
+    ctx.translate(offsetX, 0)
+
+    const drawOneItem = (item: any, topY: number, rectHeight: number) => {
       const visible = categoryFilter.value[item.category || ''] !== false
       const { alpha, fadeScale, offsetX: fx, offsetY: fy } = updateFadeProgress(String(item.id))
+
       ctx.save()
       ctx.globalAlpha = visible ? alpha : 0
       applyFadeTransform(ctx, fadeScale, fx, fy, globalScale, effectiveItemWidth)
 
-      // If this item is clicked, apply a pop effect:
-      // Compute progress (0 to 1) and use a simple easing function that peaks at progress=0.5.
       if (clickEffects.has(item.id)) {
         const effect = clickEffects.get(item.id)!
         const elapsed = performance.now() - effect.startTime
         const progress = Math.min(1, elapsed / HIGHLIGHT_DURATION)
-        // popScale goes from 1.0 at progress=0 and 1.0 at progress=1 with a peak at 1.1 at progress=0.5.
         const popScale = 1 + 0.1 * (1 - Math.abs(progress - 0.5) * 2.5)
         const centerX = (effectiveItemWidth - 10) / 2
-        const centerY = y + rectHeight / 2
+        const centerY = topY + rectHeight / 2
         ctx.translate(centerX, centerY)
         ctx.scale(popScale, popScale)
         ctx.translate(-centerX, -centerY)
@@ -304,14 +339,14 @@ export function createDrawCanvas(
         ctx,
         getTitle(item),
         0,
-        y,
+        topY,
         effectiveItemWidth - 10,
         rectHeight,
         globalScale,
         items.length > 1,
         image,
       )
-      // Draw a top indicator.
+
       const topIndicatorHeight = 5 * globalScale
       const getCategoryColor = (category: string): string => {
         const keys = Object.keys(categoryFilter.value).sort()
@@ -325,54 +360,44 @@ export function createDrawCanvas(
           '#ff9800',
           '#795548',
         ]
-        return colorPalette[index % colorPalette.length]
+        return colorPalette[index % colorPalette.length] || '#000'
       }
       ctx.fillStyle = getCategoryColor(item.category || '')
-      ctx.fillRect(0, y, effectiveItemWidth - 10, topIndicatorHeight)
+      ctx.fillRect(0, topY, effectiveItemWidth - 10, topIndicatorHeight)
       ctx.restore()
 
-      // Record a hit area (using absolute coordinates).
-      const absX = offsetX
-      const absY = offsetY + y
       if (visible) {
         hitAreas.push({
           id: item.id,
-          x: absX,
-          y: absY,
+          x: offsetX,
+          y: topY,
           width: effectiveItemWidth - 10,
           height: rectHeight,
           data: item,
         })
       }
 
-      // Instead of drawing a solid overlay, draw a ripple effect.
       if (clickEffects.has(item.id)) {
         const effect = clickEffects.get(item.id)!
         const elapsed = performance.now() - effect.startTime
         const progress = elapsed / HIGHLIGHT_DURATION
         if (progress < 1) {
           ctx.save()
-          // Set a clipping region to confine the ripple effect within the item.
           ctx.beginPath()
-          ctx.rect(0, y, effectiveItemWidth - 10, rectHeight)
+          ctx.rect(0, topY, effectiveItemWidth - 10, rectHeight)
           ctx.clip()
 
           const rectWidth = effectiveItemWidth - 10
-          // Use provided click coordinates relative to the item.
           const localX = effect.clickX
           const localY = effect.clickY
-          // Calculate the maximum radius from the click point to the item's corners.
           const dx = Math.max(localX, rectWidth - localX)
           const dy = Math.max(localY, rectHeight - localY)
           const maxRadius = Math.sqrt(dx * dx + dy * dy)
           const radius = progress * maxRadius
-          // Fade the ripple's opacity from 0.3 to 0.
           const rippleAlpha = 0.3 * (1 - progress)
-          ctx.beginPath()
-          // Draw ripple using the item-relative coordinates.
-          ctx.arc(localX, y + localY, radius, 0, Math.PI * 2)
-          // Use the category-dependent color and convert it to RGBA.
           const baseColor = getCategoryColor(item.category || '')
+          ctx.beginPath()
+          ctx.arc(localX, topY + localY, radius, 0, Math.PI * 2)
           ctx.fillStyle = hexToRgba(baseColor, rippleAlpha)
           ctx.fill()
           ctx.restore()
@@ -383,34 +408,39 @@ export function createDrawCanvas(
     }
 
     if (items.length === 1) {
-      const y = layout.itemY
-      drawOneItem(items[0], y, layout.singleItemHeight)
+      const topY = anchorY - singleItemHeight
+      drawOneItem(items[0], topY, singleItemHeight)
     } else {
-      const unit = 90 * globalScale
-      const gap = 4 * globalScale
-      const totalHeight = items.length * unit
-      const startY = layout.itemY + layout.singleItemHeight - totalHeight
-      const heightEach = unit - (gap * (items.length - 1)) / items.length
+      const totalHeight = items.length * multiItemBase + gap * (items.length - 1)
+      const startY = anchorY - totalHeight
       items.forEach((item, i) => {
-        const y = startY + i * (heightEach + gap)
-        drawOneItem(item, y, heightEach)
+        const topY = startY + i * (multiItemBase + gap)
+        drawOneItem(item, topY, multiItemBase)
       })
     }
 
     ctx.restore()
   }
 
+  // Draw background for each track's lane, plus year labels.
   const drawYearElements = (
     ctx: CanvasRenderingContext2D,
     layout: ReturnType<typeof getLayoutParams>,
     globalScale: number,
     effectiveItemWidth: number,
+    currentScrollX: number,
   ) => {
     ctx.save()
     ctx.fillStyle = 'white'
-    ctx.fillRect(0, layout.laneY, canvasWidth.value, layout.yearLaneHeight)
-    ctx.translate(0, layout.rowHeight)
-    ctx.fillRect(0, layout.laneY, canvasWidth.value, layout.yearLaneHeight)
+    // The bottom track's lane is near layout.tamilLaneY,
+    // The top track's lane is near layout.worldLaneY.
+
+    // We'll fill a horizontal strip for each lane.
+    // For clarity, you can do a single fillRect for each:
+    // top lane:
+    ctx.fillRect(0, layout.worldLaneY, canvasWidth.value, layout.yearLaneHeight)
+    // bottom lane:
+    ctx.fillRect(0, layout.tamilLaneY, canvasWidth.value, layout.yearLaneHeight)
     ctx.restore()
 
     let flatIndex = 0
@@ -422,21 +452,22 @@ export function createDrawCanvas(
           ctx.font = `${14 * globalScale}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
-          // Apply a neat shadow for the year labels.
           ctx.shadowColor = 'rgba(0,0,0,0.2)'
           ctx.shadowBlur = 2
           ctx.shadowOffsetX = 1
           ctx.shadowOffsetY = 1
           ctx.fillStyle = '#000'
+          // Top track label:
           ctx.fillText(
-            `${year}`,
+            String(year),
             x + (effectiveItemWidth - 10) / 2,
-            layout.laneY + layout.yearLaneHeight / 2,
+            layout.worldLaneY + layout.yearLaneHeight / 2,
           )
+          // Bottom track label:
           ctx.fillText(
             `${year} C.E.`,
             x + (effectiveItemWidth - 10) / 2,
-            layout.rowHeight + layout.laneY + layout.yearLaneHeight / 2,
+            layout.tamilLaneY + layout.yearLaneHeight / 2,
           )
           ctx.restore()
         }
@@ -453,6 +484,7 @@ export function createDrawCanvas(
     const centerX = canvasWidth.value / 2
     const arrowWidth = 20 * globalScale
     const arrowHeight = 10 * globalScale
+
     const drawArrow = (y: number) => {
       ctx.beginPath()
       ctx.moveTo(centerX, y - arrowHeight / 2)
@@ -461,10 +493,12 @@ export function createDrawCanvas(
       ctx.closePath()
       ctx.fill()
     }
+
     ctx.save()
     ctx.fillStyle = 'white'
-    drawArrow(layout.laneY + layout.yearLaneHeight / 2 - 14 * globalScale)
-    drawArrow(layout.rowHeight + layout.laneY + layout.yearLaneHeight / 2 - 14 * globalScale)
+    // optional arrows near lane centers:
+    drawArrow(layout.worldLaneY + layout.yearLaneHeight / 2 - 14 * globalScale)
+    drawArrow(layout.tamilLaneY + layout.yearLaneHeight / 2 - 14 * globalScale)
     ctx.restore()
   }
 
@@ -477,7 +511,7 @@ export function createDrawCanvas(
     const ctx = scrollCanvas.value.getContext('2d')
     if (!ctx) return
 
-    // Clear hit areas each frame.
+    // Clear old hit areas each frame
     hitAreas.length = 0
 
     const globalScale = getScaleFactor()
@@ -499,29 +533,33 @@ export function createDrawCanvas(
     groupedItems.value.forEach((yearGroup) => {
       yearGroup.groups.forEach((groupColumn) => {
         const x = flatColumnIndex * effectiveItemWidth - currentScrollX
+
+        // Only draw columns if in viewport
         if (x + effectiveItemWidth >= 0 && x <= canvasWidth.value) {
+          // World (top) track => anchor at layout.worldTrackAnchorY
           drawTrack(
             ctx,
             groupColumn.world.map((item) => ({ ...item, id: String(item.id) })),
             x,
-            0,
+            layout.worldTrackAnchorY,
             globalScale,
-            layout,
             effectiveItemWidth,
             (item) => item.english_heading || '',
+            worldTrackHeightFactor,
           )
+          // Tamil (bottom) track => anchor at layout.tamilTrackAnchorY
           drawTrack(
             ctx,
             groupColumn.tamil.map((item) => ({ ...item, id: String(item.id) })),
-
             x,
-            layout.rowHeight,
+            layout.tamilTrackAnchorY,
             globalScale,
-            layout,
             effectiveItemWidth,
             (item) => item.tamil_heading || '',
+            tamilTrackHeightFactor,
           )
         } else {
+          // remove fade progress for items not drawn
           groupColumn.world.forEach((item) => fadeProgress.delete(String(item.id)))
           groupColumn.tamil.forEach((item) => fadeProgress.delete(String(item.id)))
         }
@@ -529,7 +567,7 @@ export function createDrawCanvas(
       })
     })
 
-    drawYearElements(ctx, layout, globalScale, effectiveItemWidth)
+    drawYearElements(ctx, layout, globalScale, effectiveItemWidth, currentScrollX)
     drawArrowIndicators(ctx, layout, globalScale)
 
     animationFrameId = requestAnimationFrame(drawCanvas)
@@ -541,8 +579,10 @@ export function createDrawCanvas(
     const effectiveItemWidth = itemWidth * scale + EFFECTIVE_WIDTH_OFFSET
     const timelineFullWidth = totalColumns * effectiveItemWidth
     const viewportWidth = canvasWidth.value
+
     let indicatorWidth = (viewportWidth / timelineFullWidth) * minimapWidth
     if (indicatorWidth < MIN_INDICATOR_WIDTH) indicatorWidth = MIN_INDICATOR_WIDTH
+
     const leftMargin = 0
     const availableMinimapWidth = minimapWidth - 2 * leftMargin
     const indicatorLeft = leftMargin + (currentScrollX / timelineFullWidth) * availableMinimapWidth
@@ -550,7 +590,6 @@ export function createDrawCanvas(
     return { indicatorWidth, indicatorLeft }
   }
 
-  // hitTest returns the first hit item for a given canvas coordinate.
   const hitTest = (x: number, y: number) => {
     for (const area of hitAreas) {
       if (x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) {

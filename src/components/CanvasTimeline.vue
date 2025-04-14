@@ -228,8 +228,9 @@ export default defineComponent({
       categoryFilter,
       wrapText,
       minimapWidth.value,
+      0.5, // worldTrackHeightFactor
+      1.0, // tamilTrackHeightFactor
     )
-
     // --- Timeline Ticks ---
     const timelineTicks = computed<TimelineTick[]>(() => {
       const leftMargin = MINIMAP_MARGIN,
@@ -270,8 +271,8 @@ export default defineComponent({
     ]
     const minimapRectangles = computed<MinimapRectangle[]>(() => {
       if (!groupedItems.value || groupedItems.value.length === 0) return []
-      const minimapItemWidth = 3
-      const leftMargin = 2
+      const minimapItemWidth = 5
+      const leftMargin = 3
       const timescaleHeight = 20
       const minimapTotalHeight = 75
 
