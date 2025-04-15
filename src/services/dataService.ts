@@ -253,7 +253,7 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
     return categories[Math.floor(Math.random() * 7) + 1]
   }
 
-  for (let i = 0; i < 3500; i++) {
+  for (let i = 0; i < 2; i++) {
     const randomYear = getRandomYear()
     const randomCategory = getRandomCategory()
 
@@ -265,7 +265,7 @@ export async function getItems(): Promise<{ items: Item[]; groupedItems: YearGro
       year_ta: convertToTamilVikramEra(randomYear),
       english_long_text: `This is a randomly generated English description for item ${i + 1}`,
       tamil_long_text: `This is a randomly generated Tamil description for item ${i + 1}`,
-      featured_image: `random-featured-image-${i}.jpg`,
+      featured_image: `https://picsum.photos/200`,
       additional_images: [],
       category: `${randomCategory}`,
       index: i,

@@ -145,14 +145,6 @@ function wrapTextFloatLeft(
 }
 
 /**
- * Helper: Formats world years.
- * Negative numbers become "YYYY B.C." and non-negative become "A.D. YYYY".
- */
-function formatWorldYear(year: number): string {
-  return year < 0 ? Math.abs(year) + ' B.C.' : 'A.D. ' + year
-}
-
-/**
  * drawRectWithText()
  * Draws the overall rectangle for an item.
  *
