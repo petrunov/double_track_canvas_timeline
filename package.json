@@ -1,8 +1,10 @@
 {
-  "name": "timeline",
+  "name": "Tamil History Timeline",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "author": "Vesselin Petrunov, RUNOVA Systems https://runova.systems",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
