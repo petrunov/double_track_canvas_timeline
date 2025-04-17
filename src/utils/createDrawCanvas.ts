@@ -248,7 +248,7 @@ function drawRectWithText(
   const textAreaX = x + MARGIN
   const textAreaY = imageY
   const textAreaWidth = width - 2 * MARGIN
-  const MAX_LINES = 4
+  const MAX_LINES = 2
 
   ctx.fillStyle = '#000'
   // Step 1: Draw Title in bold.
@@ -323,8 +323,8 @@ export function createDrawCanvas(
   }>
 } {
   const EFFECTIVE_WIDTH_OFFSET = 2
-  const REFERENCE_SINGLE_ITEM_HEIGHT = 100
-  const REFERENCE_MULTI_ITEM_HEIGHT = 101
+  const REFERENCE_SINGLE_ITEM_HEIGHT = 65
+  const REFERENCE_MULTI_ITEM_HEIGHT = 66
   const MIN_SCREEN_WIDTH = 320
   const REFERENCE_MAX_SCREEN_WIDTH = 1920
   const MIN_INDICATOR_WIDTH = 10
@@ -605,9 +605,9 @@ export function createDrawCanvas(
             x + (effectiveItemWidth - 10) / 2,
             layout.worldLaneY + layout.yearLaneHeight / 2,
           )
-          // For Tamil items, use the Tamil year (year_ta).
+
           ctx.fillText(
-            String(year_ta),
+            formatWorldYear(year),
             x + (effectiveItemWidth - 10) / 2,
             layout.tamilLaneY + layout.yearLaneHeight / 2,
           )
@@ -705,6 +705,26 @@ export function createDrawCanvas(
 
     drawYearElements(ctx, layout, globalScale, effectiveItemWidth, currentScrollX)
     drawArrowIndicators(ctx, layout, globalScale)
+
+    // Draw year under the world track.
+    const flatYears: number[] = []
+    const centerScreenX = currentScrollX + canvasWidth.value / 2
+    const colWidth = effectiveItemWidth // as you already compute
+    let colIndex = Math.floor(centerScreenX / colWidth)
+    groupedItems.value.forEach(({ year, groups }) => {
+      groups.forEach(() => flatYears.push(year))
+    })
+    colIndex = Math.max(0, Math.min(colIndex, flatYears.length - 1))
+    const currentYear = flatYears[colIndex]
+    ctx.save()
+    ctx.fillStyle = 'rgba(240,240,240,0.7)' // light gray @ 90% opacity
+    ctx.font = `bold ${64 * globalScale}px sans-serif` // tweak size as desired
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    const yPos = layout.worldLaneY + layout.yearLaneHeight + 10 * globalScale
+    ctx.fillText(String(currentYear), canvasWidth.value / 2, yPos)
+    ctx.restore()
+    ////////////////////////////////////////////////////////////////////////////////
 
     animationFrameId = requestAnimationFrame(drawCanvas)
   }
