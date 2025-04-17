@@ -233,29 +233,39 @@ export default defineComponent({
     )
     // --- Timeline Ticks ---
     const timelineTicks = computed<TimelineTick[]>(() => {
-      const leftMargin = MINIMAP_MARGIN,
-        rightMargin = MINIMAP_MARGIN
+      const leftMargin = MINIMAP_MARGIN
+      const rightMargin = MINIMAP_MARGIN
       const availableWidth = minimapWidth.value - leftMargin - rightMargin
+
+      // 1️⃣ flatten your years exactly as your canvas sees them
+      const flatYears: number[] = []
+      groupedItems.value.forEach(({ year, groups }) => {
+        groups.forEach(() => {
+          flatYears.push(year)
+        })
+      })
+      if (!flatYears.length) return []
+
+      // 2️⃣ keep your old minor‑tick spacing
       const tickSpacing = 15
       const tickCount = Math.floor(availableWidth / tickSpacing) + 1
+
       const ticks: TimelineTick[] = []
-
-      // Compute min and max year from the items (if available), otherwise default values.
-      const years = items.value.map((item) => Number(item.year_ce))
-      const minYear = years.length ? Math.min(...years) : 1900
-      const maxYear = years.length ? Math.max(...years) : 2000
-
       for (let i = 0; i < tickCount; i++) {
         const left = leftMargin + i * tickSpacing
-        // Only every 10th tick is "major" (showing a label), others remain minor.
+
+        // major every 10th minor
         if (i % 10 === 0) {
+          // pick the year under this tick by mapping into flatYears
           const ratio = i / (tickCount - 1)
-          const year = Math.round(minYear + ratio * (maxYear - minYear))
+          const idx = Math.round(ratio * (flatYears.length - 1))
+          const year = flatYears[idx]
           ticks.push({ left, type: 'major', year })
         } else {
           ticks.push({ left, type: 'minor' })
         }
       }
+
       return ticks
     })
 
